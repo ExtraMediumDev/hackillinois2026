@@ -1,0 +1,148 @@
+{
+  "info": {
+    "name": "Ignite API — Floor is Lava",
+    "description": "Full lifecycle collection for the Ignite API HackIllinois 2026 demo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "api_key", "value": "your-api-key-here" },
+    { "key": "player_id", "value": "" },
+    { "key": "game_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "1. Create Player",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "pm.collectionVariables.set('player_id', res.player_id);",
+              "console.log('player_id:', res.player_id);",
+              "console.log('onramp_url:', res.stripe_onramp_session_url);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/v1/players"
+      }
+    },
+    {
+      "name": "2. Get Player (check balances)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
+        "url": "{{base_url}}/v1/players/{{player_id}}"
+      }
+    },
+    {
+      "name": "2b. Get Player Transactions",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
+        "url": {
+          "raw": "{{base_url}}/v1/players/{{player_id}}/transactions?limit=10",
+          "query": [{ "key": "limit", "value": "10" }]
+        }
+      }
+    },
+    {
+      "name": "3. Create Game",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "pm.collectionVariables.set('game_id', res.game_id);",
+              "console.log('game_id:', res.game_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"buy_in_usdc\": \"0.05\",\n  \"max_players\": 2\n}"
+        },
+        "url": "{{base_url}}/v1/games"
+      }
+    },
+    {
+      "name": "4. Join Game (Player 1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"player_id\": \"{{player_id}}\"\n}"
+        },
+        "url": "{{base_url}}/v1/games/{{game_id}}/join"
+      }
+    },
+    {
+      "name": "5a. Move — Right",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"direction\": \"right\"\n}"
+        },
+        "url": "{{base_url}}/v1/games/{{game_id}}/move"
+      }
+    },
+    {
+      "name": "5b. Move — Down",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"direction\": \"down\"\n}"
+        },
+        "url": "{{base_url}}/v1/games/{{game_id}}/move"
+      }
+    },
+    {
+      "name": "6. Get Game (confirm winner)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
+        "url": "{{base_url}}/v1/games/{{game_id}}"
+      }
+    }
+  ]
+}

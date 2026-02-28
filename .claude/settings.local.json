@@ -1,0 +1,10 @@
+{
+  "enabledMcpjsonServers": [
+    "git",
+    "github",
+    "context7",
+    "stripe",
+    "filesystem",
+    "upstash"
+  ]
+}
