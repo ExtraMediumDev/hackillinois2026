@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=Libre+Baskerville:ital,wght@0,400..700;1,400..700&family=Space+Grotesk:wght@300..700&display=swap');
+
+:root {
+  color-scheme: dark;
+  font-family: 'Figtree', sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
+  line-height: 1.5;
+  font-weight: 400;
+  background: #060010;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: radial-gradient(circle at 10% 10%, #161139 0%, #060010 60%);
+  color: #f3f5ff;
+}
+
+.page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.aurora-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.8;
+}
+
+.cursor-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 7rem 1.5rem 3rem;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.8rem;
+  color: #aeb6ff;
+}
+
+h1 {
+  margin: 0.35rem 0 0;
+}
+
+.headline {
+  font-family: 'Libre Baskerville', serif;
+  font-optical-sizing: auto;
+  font-size: clamp(3rem, 10vw, 7rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-shadow: 0 10px 40px rgba(82, 39, 255, 0.35);
+}
+
+.headline.encrypted {
+  opacity: 0.8;
+  color: #8ee4ff;
+}
+
+.subhead {
+  max-width: 760px;
+  margin: 1rem auto 0;
+  font-size: clamp(1.05rem, 2.5vw, 1.35rem);
+  color: #d8dcff;
+}
+
+.demo-section {
+  margin-top: 2.5rem;
+}
+
+.demo-reveal {
+  margin: 0 auto 1rem;
+  max-width: 900px;
+  text-align: center;
+}
+
+.demo-reveal-text {
+  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+  color: #dce0ff;
+  font-weight: 600;
+}
+
+.demo-player-wrap {
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+.carousel-section {
+  margin-top: 2.4rem;
+  display: grid;
+  gap: 0.75rem;
+  place-items: center;
+}
+
+.carousel-title {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+  color: #e8ebff;
+}
+
+.carousel-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 540px) {
+  .content {
+    padding-top: 5.5rem;
+  }
+
+  .carousel-wrap .carousel-container {
+    width: 94vw !important;
+    max-width: 420px;
+  }
+}

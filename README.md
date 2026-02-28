@@ -1,4 +1,4 @@
-# Ignite API
+# Splice API
 
 > Web2-to-Web3 gaming bridge on Solana — HackIllinois 2026
 >
@@ -17,7 +17,7 @@ Players pay with a credit card, play **The Floor is Lava**, and receive winnings
                                 │  REST (X-API-Key)
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        IGNITE API (Fastify)                         │
+│                        SPLICE API (Fastify)                         │
 │                                                                     │
 │  POST /v1/players ──► generateKeypair ──► encryptKeypair (AES-GCM) │
 │  GET  /v1/players/:id ──────────────────────────────────────────►  │

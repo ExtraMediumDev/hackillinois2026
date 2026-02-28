@@ -88,7 +88,7 @@ const start = async () => {
   const port = parseInt(process.env.PORT ?? '3000', 10);
   try {
     await app.listen({ port, host: '0.0.0.0' });
-    console.log(`Ignite API running on port ${port}`);
+    console.log(`Splice API running on port ${port}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

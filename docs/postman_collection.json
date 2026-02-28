@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Ignite API — Floor is Lava",
-    "description": "Full lifecycle collection for the Ignite API HackIllinois 2026 demo.",
+    "name": "Splice API — Floor is Lava",
+    "description": "Full lifecycle collection for the Splice API HackIllinois 2026 demo.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

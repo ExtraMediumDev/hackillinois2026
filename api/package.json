@@ -1,7 +1,7 @@
 {
-  "name": "ignite-api",
+  "name": "splice-api",
   "version": "1.0.0",
-  "description": "Ignite API — Web2-to-Web3 bridge for gaming on Solana",
+  "description": "Splice API — Web2-to-Web3 bridge for gaming on Solana",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",

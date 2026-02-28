@@ -95,7 +95,7 @@ export async function createCheckoutSession(params: {
           currency: 'usd',
           unit_amount: params.amountCents,
           product_data: {
-            name: 'Ignite — Add USDC to wallet',
+            name: 'Splice API — Add USDC to wallet',
             description: 'Fund your burner wallet with USDC for The Floor is Lava',
             images: undefined,
           },
