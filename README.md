@@ -4,7 +4,7 @@
 >
 > **Tracks:** Stripe Best Web API · Solana
 
-Players pay with a credit card, play **The Floor is Lava**, and receive winnings directly to their debit card — no wallet, no seed phrase, no friction.
+Players pay with Stripe, and receive winnings directly to their debit card — no wallet, no seed phrase, no friction.
 
 ---
 
