@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+*.env
+!*.env.example
+
+# Dependencies
+node_modules/
+
+# Build outputs
+api/dist/
+program/target/
+
+# Anchor / Solana
+.anchor/
+test-ledger/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# Optional: local overrides
+.env.local
+.env.*.local
