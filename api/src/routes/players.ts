@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { generateKeypair, createPlayerRecord } from '../services/wallet';
 import { savePlayer, getPlayer } from '../services/redis';
-import { createOnrampSession } from '../services/stripe';
+import { createOnrampSession, createCheckoutSession } from '../services/stripe';
 import { getSolBalance, getTokenBalance, getTransactionHistory } from '../services/solana';
 
 export default async function playerRoutes(app: FastifyInstance): Promise<void> {
@@ -23,6 +23,70 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
     };
     return reply.code(201).send(response);
   });
+
+  /**
+   * POST /v1/players/:id/checkout-session
+   * Creates a Stripe Checkout session for demo payments. On success, webhook credits devnet USDC to this player.
+   * Body: { success_url, cancel_url, amount_usd? } — amount_usd defaults to 0.05
+   */
+  app.post(
+    '/players/:id/checkout-session',
+    async (
+      request: FastifyRequest<{
+        Params: { id: string };
+        Body: { success_url?: string; cancel_url?: string; amount_usd?: number };
+      }>,
+      reply: FastifyReply
+    ) => {
+      const player = await getPlayer(request.params.id);
+      if (!player) {
+        return reply.code(404).send({
+          status: 'error',
+          statusCode: 404,
+          error: {
+            code: 'PLAYER_NOT_FOUND',
+            message: `Player ${request.params.id} not found.`,
+            remediation: 'Create a player first via POST /v1/players.',
+          },
+        });
+      }
+      const successUrl = request.body?.success_url ?? 'http://localhost:3000/success';
+      const cancelUrl = request.body?.cancel_url ?? 'http://localhost:3000/cancel';
+      const amountUsd = request.body?.amount_usd ?? 0.5;
+      const amountCents = Math.round(amountUsd * 100);
+      if (amountCents < 50) {
+        return reply.code(400).send({
+          status: 'error',
+          statusCode: 400,
+          error: {
+            code: 'INVALID_AMOUNT',
+            message: 'Stripe minimum is $0.50. Use amount_usd >= 0.5.',
+            remediation: 'Omit amount_usd for default $0.50.',
+          },
+        });
+      }
+      try {
+        const url = await createCheckoutSession({
+          playerId: player.player_id,
+          amountCents,
+          successUrl,
+          cancelUrl,
+        });
+        return reply.send({ url, amount_usd: amountUsd });
+      } catch (err) {
+        app.log.error({ err }, 'Checkout session create failed');
+        return reply.code(500).send({
+          status: 'error',
+          statusCode: 500,
+          error: {
+            code: 'CHECKOUT_ERROR',
+            message: 'Failed to create payment session.',
+            remediation: 'Check Stripe configuration.',
+          },
+        });
+      }
+    }
+  );
 
   /**
    * GET /v1/players/:id

@@ -15,9 +15,13 @@ function getStripe(): Stripe {
  */
 export async function createOnrampSession(walletAddress: string): Promise<string> {
   const stripe = getStripe();
+  // Crypto Onramp may be missing in SDK or not enabled on account
+  const crypto = (stripe as unknown as { crypto?: { onrampSessions?: { create: (opts: unknown) => Promise<{ redirect_url: string }> } } }).crypto;
+  if (!crypto?.onrampSessions) {
+    return `https://dashboard.stripe.com/crypto-onramp/get-started`;
+  }
   try {
-    // @ts-expect-error — crypto onramp is a newer Stripe API not yet in the types
-    const session = await stripe.crypto.onrampSessions.create({
+    const session = await crypto.onrampSessions.create({
       transaction_details: {
         destination_currency: 'usdc',
         destination_network: 'solana',
@@ -69,6 +73,42 @@ export async function initiateInstantPayout(
     },
     { stripeAccount: connectAccountId }
   );
+}
+
+/**
+ * Creates a Stripe Checkout session for demo payments (card → we credit devnet USDC).
+ * Store player_id in metadata so webhook can credit the correct burner wallet.
+ */
+export async function createCheckoutSession(params: {
+  playerId: string;
+  amountCents: number;
+  successUrl: string;
+  cancelUrl: string;
+}): Promise<string> {
+  const stripe = getStripe();
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          unit_amount: params.amountCents,
+          product_data: {
+            name: 'Ignite — Add USDC to wallet',
+            description: 'Fund your burner wallet with USDC for The Floor is Lava',
+            images: undefined,
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    success_url: params.successUrl,
+    cancel_url: params.cancelUrl,
+    metadata: { player_id: params.playerId },
+    client_reference_id: params.playerId,
+  });
+  return session.url!;
 }
 
 /**

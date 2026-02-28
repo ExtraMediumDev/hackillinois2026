@@ -2,6 +2,7 @@ import 'dotenv/config';
 import Fastify, { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
+import fastifyRawBody from 'fastify-raw-body';
 
 import { authMiddleware } from './middleware/auth';
 import playerRoutes from './routes/players';
@@ -11,17 +12,8 @@ import { IgniteError } from './types';
 
 const app = Fastify({ logger: true });
 
-// Plugins
-app.register(sensible);
-app.register(cors, { origin: true });
-
 // Auth on all non-webhook routes
 app.addHook('preHandler', authMiddleware);
-
-// Routes
-app.register(playerRoutes, { prefix: '/v1' });
-app.register(gameRoutes, { prefix: '/v1' });
-app.register(webhookRoutes, { prefix: '/v1' });
 
 // Global error handler
 app.setErrorHandler((error: FastifyError, _request: FastifyRequest, reply: FastifyReply) => {
@@ -47,6 +39,18 @@ app.setErrorHandler((error: FastifyError, _request: FastifyRequest, reply: Fasti
 app.get('/health', { preHandler: [] }, async () => ({ status: 'ok', version: '1.0.0' }));
 
 const start = async () => {
+  await app.register(sensible);
+  await app.register(cors, { origin: true });
+  await app.register(fastifyRawBody, {
+    global: false,
+    encoding: false,
+    runFirst: true,
+  });
+
+  app.register(playerRoutes, { prefix: '/v1' });
+  app.register(gameRoutes, { prefix: '/v1' });
+  app.register(webhookRoutes, { prefix: '/v1' });
+
   const port = parseInt(process.env.PORT ?? '3000', 10);
   try {
     await app.listen({ port, host: '0.0.0.0' });

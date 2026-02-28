@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { constructWebhookEvent } from '../services/stripe';
 import { getPlayer, savePlayer, getGame, saveGame } from '../services/redis';
+import { transferUsdcToPlayer } from '../services/solana';
 
 export default async function webhookRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -41,6 +42,37 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
       }
 
       switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object as {
+            metadata?: { player_id?: string };
+            client_reference_id?: string | null;
+            amount_total?: number | null;
+            payment_status?: string;
+          };
+          const playerId = session.metadata?.player_id ?? session.client_reference_id ?? null;
+          if (!playerId) {
+            app.log.warn('checkout.session.completed missing player_id / client_reference_id');
+            break;
+          }
+          if (session.payment_status !== 'paid') {
+            app.log.warn({ playerId, payment_status: session.payment_status }, 'Checkout not paid');
+            break;
+          }
+          const player = await getPlayer(playerId);
+          if (!player) {
+            app.log.warn({ playerId }, 'Player not found for checkout credit');
+            break;
+          }
+          const amountUsd = (session.amount_total ?? 50) / 100;
+          try {
+            const sig = await transferUsdcToPlayer(player.public_key, amountUsd);
+            app.log.info({ playerId, amountUsd, signature: sig }, 'Credited devnet USDC after checkout');
+          } catch (err) {
+            app.log.error({ err, playerId, amountUsd }, 'Failed to credit USDC after checkout');
+          }
+          break;
+        }
+
         case 'crypto_onramp_session.fulfillment.succeeded': {
           const session = event.data.object as {
             wallet_addresses?: { solana?: string };

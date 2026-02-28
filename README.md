@@ -143,6 +143,16 @@ curl -X POST http://localhost:3000/v1/players \
 }
 ```
 
+#### `POST /v1/players/:id/checkout-session` — Get Stripe Checkout URL (demo payments)
+Creates a Stripe Checkout session; on payment success the webhook credits devnet USDC to this player. Use this when Crypto Onramp is not approved.
+```bash
+curl -X POST http://localhost:3000/v1/players/$PLAYER_ID/checkout-session \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"success_url": "https://yourapp.com/success", "cancel_url": "https://yourapp.com/cancel", "amount_usd": 0.5}'
+```
+**Response:** `{ "url": "https://checkout.stripe.com/...", "amount_usd": 0.5 }` — redirect the user to `url`. Default amount is $0.50 (Stripe minimum).
+
 #### `GET /v1/players/:id` — Get player + live balances
 ```bash
 curl http://localhost:3000/v1/players/$PLAYER_ID \
@@ -231,7 +241,8 @@ Valid directions: `up`, `down`, `left`, `right`
 Configured in Stripe Dashboard → Webhooks. No `X-API-Key` required (uses Stripe signature).
 
 Events handled:
-- `crypto_onramp_session.fulfillment.succeeded` — USDC funded to burner wallet
+- `checkout.session.completed` — After Stripe Checkout payment, credits devnet USDC to the player's burner wallet (demo flow)
+- `crypto_onramp_session.fulfillment.succeeded` — USDC funded to burner wallet (when Onramp approved)
 - `account.updated` — Connect account status update
 
 ---
