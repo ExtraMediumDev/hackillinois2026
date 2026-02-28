@@ -7,7 +7,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
  */
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const { url } = request.raw;
-  if (url === '/health' || url?.startsWith('/v1/webhooks/')) return;
+  if (url === '/health' || url?.startsWith('/v1/webhooks/') || url?.startsWith('/docs')) return;
 
   const apiKey = request.headers['x-api-key'];
   if (!apiKey || apiKey !== process.env.API_KEY) {

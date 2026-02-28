@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { PlayerRecord, GameRecord, IdempotencyRecord } from '../types';
+import { PlayerRecord, IdempotencyRecord } from '../types';
 
 let _client: Redis | null = null;
 
@@ -15,12 +15,10 @@ function getClient(): Redis {
 
 // ─── Key Helpers ─────────────────────────────────────────────────────────────
 const playerKey = (id: string) => `player:${id}`;
-const gameKey = (id: string) => `game:${id}`;
 const idempotentKey = (key: string) => `idempotent:${key}`;
 
 // TTLs (seconds)
 const PLAYER_TTL = 60 * 60 * 24;       // 24 hours
-const GAME_TTL = 60 * 60 * 24 * 7;     // 7 days
 const IDEMPOTENT_TTL = 60 * 60 * 24;   // 24 hours
 
 // ─── Player ──────────────────────────────────────────────────────────────────
@@ -32,17 +30,6 @@ export async function getPlayer(id: string): Promise<PlayerRecord | null> {
   const raw = await getClient().get<string>(playerKey(id));
   if (!raw) return null;
   return typeof raw === 'string' ? JSON.parse(raw) : (raw as PlayerRecord);
-}
-
-// ─── Game ─────────────────────────────────────────────────────────────────────
-export async function saveGame(game: GameRecord): Promise<void> {
-  await getClient().set(gameKey(game.game_id), JSON.stringify(game), { ex: GAME_TTL });
-}
-
-export async function getGame(id: string): Promise<GameRecord | null> {
-  const raw = await getClient().get<string>(gameKey(id));
-  if (!raw) return null;
-  return typeof raw === 'string' ? JSON.parse(raw) : (raw as GameRecord);
 }
 
 // ─── Idempotency ──────────────────────────────────────────────────────────────
@@ -67,3 +54,4 @@ export async function setIdempotencyCompleted(key: string, response: unknown): P
   const record: IdempotencyRecord = { status: 'completed', response, created_at: Date.now() };
   await getClient().set(idempotentKey(key), JSON.stringify(record), { ex: IDEMPOTENT_TTL });
 }
+

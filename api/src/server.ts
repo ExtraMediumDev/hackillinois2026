@@ -3,10 +3,11 @@ import Fastify, { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 
 import { authMiddleware } from './middleware/auth';
 import playerRoutes from './routes/players';
-import gameRoutes from './routes/games';
 import webhookRoutes from './routes/webhooks';
 import { IgniteError } from './types';
 
@@ -47,8 +48,41 @@ const start = async () => {
     runFirst: true,
   });
 
+  await app.register(swagger, {
+    openapi: {
+      openapi: '3.0.0',
+      info: {
+        title: 'Ignite API',
+        description: 'Web2-to-Web3 gaming bridge API — HackIllinois 2026',
+        version: '1.0.0',
+      },
+      servers: [
+        {
+          url: 'http://localhost:3000',
+          description: 'Development server',
+        },
+      ],
+      components: {
+        securitySchemes: {
+          apiKey: {
+            type: 'apiKey',
+            name: 'x-api-key',
+            in: 'header',
+          },
+        },
+      },
+    },
+  });
+
+  await app.register(swaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: false,
+    },
+  });
+
   app.register(playerRoutes, { prefix: '/v1' });
-  app.register(gameRoutes, { prefix: '/v1' });
   app.register(webhookRoutes, { prefix: '/v1' });
 
   const port = parseInt(process.env.PORT ?? '3000', 10);

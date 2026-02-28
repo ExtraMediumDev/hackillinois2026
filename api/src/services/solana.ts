@@ -52,7 +52,7 @@ export async function getTokenBalance(pubkey: string, mint: string): Promise<num
   const owner = new PublicKey(pubkey);
   const mintPubkey = new PublicKey(mint);
   try {
-    const ata = getAssociatedTokenAddressSync(mintPubkey, owner);
+    const ata = getAssociatedTokenAddressSync(mintPubkey, owner, true);
     const balance = await conn.getTokenAccountBalance(ata);
     return parseFloat(balance.value.uiAmountString ?? '0');
   } catch {
@@ -129,19 +129,45 @@ export function unwatchAccount(subscriptionId: number): void {
   getConnection().removeAccountChangeListener(subscriptionId);
 }
 
-// ─── PDA Helpers ──────────────────────────────────────────────────────────────
-export function getGameStatePda(gameIdBytes: Buffer): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('game_state'), gameIdBytes],
-    new PublicKey(process.env.PROGRAM_ID!)
-  );
-}
+// ─── Transfer USDC FROM player (Cashout) ──────────────────────────────────────
+/**
+ * Transfers devnet USDC from the player's ATA to a destination address.
+ * Creates the destination's USDC ATA if it doesn't exist.
+ * @param playerKeypair - Player's Solana Keypair
+ * @param destinationAddress - Destination Solana public key (base58)
+ * @param amountUsdc - Amount in USDC (e.g. 0.05)
+ */
+export async function transferUsdcFromPlayer(
+  playerKeypair: Keypair,
+  destinationAddress: string,
+  amountUsdc: number
+): Promise<string> {
+  const mint = new PublicKey(process.env.USDC_MINT!);
+  const destinationPubkey = new PublicKey(destinationAddress);
+  const playerPubkey = playerKeypair.publicKey;
+  const authority = getAuthority();
 
-export function getEscrowPda(gameIdBytes: Buffer): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('escrow'), gameIdBytes],
-    new PublicKey(process.env.PROGRAM_ID!)
-  );
+  const playerAta = getAssociatedTokenAddressSync(mint, playerPubkey, true);
+  const destinationAta = getAssociatedTokenAddressSync(mint, destinationPubkey, true);
+
+  const amountRaw = BigInt(Math.round(amountUsdc * 10 ** USDC_DECIMALS));
+
+  const instructions: TransactionInstruction[] = [
+    createAssociatedTokenAccountIdempotentInstruction(
+      authority.publicKey, // API Treasury covers the rent extension
+      destinationAta,
+      destinationPubkey,
+      mint
+    ),
+    createTransferInstruction(
+      playerAta,
+      destinationAta,
+      playerPubkey,
+      amountRaw
+    ),
+  ];
+
+  return buildAndSendTransaction(instructions, [playerKeypair]);
 }
 
 // ─── Transfer USDC to player (demo: after Stripe Checkout) ────────────────────
@@ -159,8 +185,8 @@ export async function transferUsdcToPlayer(
   const authority = getAuthority();
   const playerPubkey = new PublicKey(playerWalletAddress);
 
-  const authorityAta = getAssociatedTokenAddressSync(mint, authority.publicKey);
-  const playerAta = getAssociatedTokenAddressSync(mint, playerPubkey);
+  const authorityAta = getAssociatedTokenAddressSync(mint, authority.publicKey, true);
+  const playerAta = getAssociatedTokenAddressSync(mint, playerPubkey, true);
 
   const amountRaw = BigInt(Math.round(amountUsdc * 10 ** USDC_DECIMALS));
 
