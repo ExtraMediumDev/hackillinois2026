@@ -1,7 +1,15 @@
-# Environment and secrets
+# Environment and secrets (never commit real keys)
 .env
-*.env
-!*.env.example
+.env.local
+.env.*.local
+api/.env
+
+# Keep .env.example as template (no negation needed if we don't use .env.*)
+# If you use .env.development etc, add those to ignore and keep only .env.example tracked.
+
+# MCP and local config (can contain API keys / tokens)
+.mcp.json
+.claude/
 
 # Dependencies
 node_modules/
@@ -19,7 +27,3 @@ test-ledger/
 .vscode/
 .DS_Store
 *.log
-
-# Optional: local overrides
-.env.local
-.env.*.local
