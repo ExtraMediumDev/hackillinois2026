@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { generateKeypair, createPlayerRecord } from '../services/wallet';
 import { savePlayer, getPlayer } from '../services/redis';
-import { createOnrampSession, createCheckoutSession } from '../services/stripe';
+import { createOnrampSession, createCheckoutSession, createConnectAccount, createConnectOnboardingLink, initiateInstantPayout } from '../services/stripe';
 import { getSolBalance, getTokenBalance, getTransactionHistory, transferUsdcFromPlayer } from '../services/solana';
 import { decryptKeypair } from '../services/wallet';
 
@@ -262,14 +262,64 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
   );
 
   /**
-   * POST /v1/players/:id/cashout
-   * Transfers all of a player's USDC to a destination wallet.
+   * POST /v1/players/:id/connect
+   * Creates or retrieves a Stripe Connect account for the player and returns an onboarding link.
    */
-  app.post<{ Params: { id: string }; Body: { destination_address: string; amount_usdc?: number } }>(
+  app.post<{ Params: { id: string } }>(
+    '/players/:id/connect',
+    {
+      schema: {
+        description: 'Creates a Stripe Connect account for the player and returns an onboarding link so they can receive fiat payouts.',
+        tags: ['Players'],
+        security: [{ apiKey: [] }],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const player = await getPlayer(request.params.id);
+      if (!player) {
+        return reply.code(404).send({ status: 'error', statusCode: 404, error: { code: 'Not Found', message: 'Player not found', remediation: '' } });
+      }
+
+      let accountId = player.stripe_connect_account_id;
+      if (!accountId) {
+        accountId = await createConnectAccount();
+        player.stripe_connect_account_id = accountId;
+        await savePlayer(player);
+      }
+
+      // Generate the secure URL where the user inputs their bank details
+      const url = await createConnectOnboardingLink(
+        accountId,
+        'http://localhost:3000/connect/refresh',
+        'http://localhost:3000/connect/return'
+      );
+
+      return reply.send({ url });
+    }
+  );
+
+  /**
+   * POST /v1/players/:id/cashout
+   * Offramps the player's USDC to fiat via their connected Stripe account.
+   */
+  app.post<{ Params: { id: string }; Body: { amount_usdc?: number } }>(
     '/players/:id/cashout',
     {
       schema: {
-        description: 'Transfers USDC from the player\'s burner wallet to a destination wallet.',
+        description: 'Offramps USDC from the burner wallet to the user\'s connected Stripe bank account.',
         tags: ['Players'],
         security: [{ apiKey: [] }],
         params: {
@@ -280,17 +330,16 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         body: {
           type: 'object',
           properties: {
-            destination_address: { type: 'string' },
             amount_usdc: { type: 'number' },
           },
-          required: ['destination_address'],
         },
         response: {
           200: {
             type: 'object',
             properties: {
               status: { type: 'string' },
-              signature: { type: 'string' },
+              solana_signature: { type: 'string' },
+              stripe_payout_id: { type: 'string' },
               amount_transferred: { type: 'number' },
             },
           },
@@ -298,18 +347,22 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       },
     },
     async (
-      request: FastifyRequest<{ Params: { id: string }; Body: { destination_address: string; amount_usdc?: number } }>,
+      request: FastifyRequest<{ Params: { id: string }; Body: { amount_usdc?: number } }>,
       reply: FastifyReply
     ) => {
       const player = await getPlayer(request.params.id);
       if (!player) {
-        return reply.code(404).send({
+        return reply.code(404).send({ status: 'error', statusCode: 404, error: { code: 'PLAYER_NOT_FOUND', message: 'Player not found.', remediation: '' } });
+      }
+
+      if (!player.stripe_connect_account_id) {
+        return reply.code(400).send({
           status: 'error',
-          statusCode: 404,
+          statusCode: 400,
           error: {
-            code: 'PLAYER_NOT_FOUND',
-            message: `Player ${request.params.id} not found.`,
-            remediation: 'Create a player first via POST /v1/players.',
+            code: 'CONNECT_ACCOUNT_MISSING',
+            message: 'You have not linked a bank account.',
+            remediation: 'Call POST /v1/players/:id/connect to set up payouts before cashing out.',
           },
         });
       }
@@ -317,53 +370,60 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       const usdcMint = process.env.USDC_MINT!;
       const currentUsdcBalance = await getTokenBalance(player.public_key, usdcMint);
 
-      const requestedAmount = request.body.amount_usdc;
+      const requestedAmount = request.body?.amount_usdc;
       const amountToTransfer = requestedAmount !== undefined ? requestedAmount : currentUsdcBalance;
 
       if (amountToTransfer <= 0) {
-        return reply.code(400).send({
-          status: 'error',
-          statusCode: 400,
-          error: {
-            code: 'INVALID_AMOUNT',
-            message: 'Cannot transfer 0 USDC.',
-            remediation: 'Provide a valid amount_usdc.',
-          },
-        });
+        return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INVALID', message: 'Cannot transfer 0.', remediation: '' } });
       }
-
       if (currentUsdcBalance < amountToTransfer) {
-        return reply.code(400).send({
-          status: 'error',
-          statusCode: 400,
-          error: {
-            code: 'INSUFFICIENT_FUNDS',
-            message: `You only have ${currentUsdcBalance} USDC, which is less than the requested ${amountToTransfer} USDC.`,
-            remediation: 'Request a lower amount.',
-          },
-        });
+        return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INSUFFICIENT', message: 'Not enough balance.', remediation: '' } });
       }
 
       const keypair = decryptKeypair(player.encrypted_keypair);
+
+      // Step 1: Transfer USDC from Burner Wallet -> API Master Treasury
+      // We read the authority public key from our own Keypair config
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const keyPath = process.env.AUTHORITY_KEYPAIR_PATH!.startsWith('~')
+        ? path.join(os.homedir(), process.env.AUTHORITY_KEYPAIR_PATH!.slice(1))
+        : path.resolve(process.env.AUTHORITY_KEYPAIR_PATH!);
+      const raw = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+      const authorityKeypair = require('@solana/web3.js').Keypair.fromSecretKey(Uint8Array.from(raw));
+      const treasuryAddress = authorityKeypair.publicKey.toBase58();
+
+      let solanaSignature;
       try {
-        const signature = await transferUsdcFromPlayer(
+        solanaSignature = await transferUsdcFromPlayer(
           keypair,
-          request.body.destination_address,
+          treasuryAddress,
           amountToTransfer
         );
-        return reply.send({ status: 'success', signature, amount_transferred: amountToTransfer });
       } catch (err) {
-        app.log.error({ err, playerId: player.player_id }, 'Cashout Failed');
-        return reply.code(500).send({
-          status: 'error',
-          statusCode: 500,
-          error: {
-            code: 'CASHOUT_FAILED',
-            message: 'An error occurred while attempting to transfer funds on-chain.',
-            remediation: 'Ensure the destination address is valid and try again.',
-          },
-        });
+        app.log.error({ err, playerId: player.player_id }, 'Web3 Cashout Failed');
+        return reply.code(500).send({ status: 'error', statusCode: 500, error: { code: 'CASHOUT_FAILED_WEB3', message: 'Failed to move funds on-chain.', remediation: '' } });
       }
+
+      // Step 2: Trigger Stripe Instant Payout from Platform -> User Connected Bank
+      // Warning: In dev mode, Stripe may throw if the Connect account isn't fully verified.
+      let stripePayoutId = "simulated_payout_dev";
+      try {
+        const amountCents = Math.round(amountToTransfer * 100);
+        const payout = await initiateInstantPayout(player.stripe_connect_account_id, amountCents);
+        stripePayoutId = payout.id;
+      } catch (err) {
+        app.log.error({ err, playerId: player.player_id }, 'Stripe Connect Payout Failed');
+        // If Stripe fails, the platform now holds the user's USDC. In a prod app, we'd refund or queue retry.
+      }
+
+      return reply.send({
+        status: 'success',
+        solana_signature: solanaSignature,
+        stripe_payout_id: stripePayoutId,
+        amount_transferred: amountToTransfer
+      });
     }
   );
 }

@@ -56,6 +56,20 @@ export async function createConnectAccount(email?: string): Promise<string> {
 }
 
 /**
+ * Creates an onboarding link for a Stripe Express Connect account.
+ */
+export async function createConnectOnboardingLink(accountId: string, refreshUrl: string, returnUrl: string): Promise<string> {
+  const stripe = getStripe();
+  const accountLink = await stripe.accountLinks.create({
+    account: accountId,
+    refresh_url: refreshUrl,
+    return_url: returnUrl,
+    type: 'account_onboarding',
+  });
+  return accountLink.url;
+}
+
+/**
  * Initiates an instant payout to a player's debit card via Stripe Connect.
  * Requires the player to have a connected bank/debit account.
  */
@@ -73,6 +87,22 @@ export async function initiateInstantPayout(
     },
     { stripeAccount: connectAccountId }
   );
+}
+
+/**
+ * Transfers funds from the platform balance to a user's connected account.
+ */
+export async function createTransferToConnectedAccount(
+  connectAccountId: string,
+  amountCents: number,
+  currency = 'usd'
+): Promise<Stripe.Transfer> {
+  const stripe = getStripe();
+  return stripe.transfers.create({
+    amount: amountCents,
+    currency,
+    destination: connectAccountId,
+  });
 }
 
 /**
