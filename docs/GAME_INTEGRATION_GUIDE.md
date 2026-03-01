@@ -152,32 +152,28 @@ Moves a player on the 10x10 grid. Only relevant for grid-based games — skip th
 
 ### 7. `POST /v1/games/:id/resolve`
 
-**For client-authoritative games.** Reports the final outcome and settles balances.
+Ends the game and adjusts the player's wallet balance. The API doesn't manage game logic — your game decides outcomes, the API just credits or debits.
 
-**Important:** Resolve only updates in-app balance (`simulated_usdc`). It does NOT trigger a Stripe withdrawal. Players cash out explicitly via `POST /v1/players/:id/cashout`.
+**Important:** Resolve only updates in-app balance. It does NOT trigger a Stripe withdrawal. Players cash out explicitly via `POST /v1/players/:id/cashout`.
 
-Two modes:
-
-#### Mode A: `player_results` (recommended for bot games)
-
-The game tells the API exactly what happens to each **real** player's balance. Bots are never mentioned. Positive = credit, negative = debit.
+Send `player_results` with the balance change for each real player. Positive = credit (player won), negative = debit (player lost). Only include real players — ignore bots entirely.
 
 ```json
 // Header: Idempotency-Key: <uuid>
 
-// Human LOST — deduct the buy-in
+// Player WON — credit winnings
 {
-  "winner": "<bot_player_id>",
+  "winner": "<player_id>",
   "player_results": [
-    { "player_id": "<human_player_id>", "net_usdc": "-0.50" }
+    { "player_id": "<player_id>", "net_usdc": "1.00" }
   ]
 }
 
-// Human WON — credit winnings
+// Player LOST — deduct buy-in
 {
-  "winner": "<human_player_id>",
+  "winner": "<bot_player_id>",
   "player_results": [
-    { "player_id": "<human_player_id>", "net_usdc": "1.00" }
+    { "player_id": "<player_id>", "net_usdc": "-0.50" }
   ]
 }
 
@@ -185,60 +181,22 @@ The game tells the API exactly what happens to each **real** player's balance. B
 {
   "game_id": "uuid",
   "status": "resolved",
-  "winner": "<player_id>",
+  "winner": "<winner_player_id>",
   "prize_pool_usdc": "0.50",
   "payouts": [
-    { "player_id": "<human>", "amount_usdc": "-0.50", "status": "simulated", "settlement_mode": "simulated" }
+    { "player_id": "<player_id>", "amount_usdc": "1.00", "status": "simulated", "settlement_mode": "simulated" }
   ],
   "distribution_rule": "explicit",
   "settlement_status": "completed"
 }
 ```
 
-Use with `skip_debit: true` on join so the buy-in isn't taken upfront — the game handles all economics at resolve time.
-
-#### Mode B: `placements` + `distribution` (pool-based, all real players)
-
-For games where all players are real and the pool is split by percentage.
-
-```json
-// Header: Idempotency-Key: <uuid>
-
-// Request
-{
-  "winner": "<player_id>",
-  "placements": [
-    { "player_id": "p1", "place": 1 },
-    { "player_id": "p2", "place": 2 }
-  ],
-  "distribution": [70, 30]
-}
-
-// Response 200
-{
-  "game_id": "uuid",
-  "status": "resolved",
-  "winner": "<player_id>",
-  "prize_pool_usdc": "1.00",
-  "placements": [
-    { "player_id": "p1", "place": 1 },
-    { "player_id": "p2", "place": 2 }
-  ],
-  "payouts": [
-    { "player_id": "p1", "amount_usdc": "0.70", "status": "simulated", "settlement_mode": "simulated" },
-    { "player_id": "p2", "amount_usdc": "0.30", "status": "simulated", "settlement_mode": "simulated" }
-  ],
-  "distribution_rule": "70/30",
-  "settlement_status": "completed"
-}
-```
-
 | Field | Required | Notes |
 |-------|----------|-------|
-| `winner` | Yes | Must be a `player_id` that joined the game |
-| `player_results` | No | Explicit balance changes per real player. If provided, `placements`/`distribution` are ignored for payout math. |
-| `placements` | No | If omitted, winner gets 1st, everyone else 2nd+ |
-| `distribution` | No | Array of percentages summing to at most 100. Default: `[70, 30]` for 2+, `[100]` for solo |
+| `winner` | Yes | The player_id that won (can be a bot that joined the game) |
+| `player_results` | Yes* | Balance changes for real players only. `net_usdc`: positive to credit, negative to debit. |
+
+*If omitted, falls back to pool-based distribution using `placements`/`distribution` arrays (for all-human multiplayer games).
 
 ### 8. `GET /v1/games/:id`
 
@@ -362,20 +320,20 @@ All errors use this shape:
 
 ## Balance Management
 
-Player balances combine on-chain USDC and simulated (platform-credited) USDC:
+The API manages a crypto wallet per player. Your game doesn't need to understand crypto — just think of it as an account balance.
 
-- **`usdc_balance`** — total spendable balance (on-chain + simulated)
-- **`on_chain_usdc`** — actual on-chain USDC in the burner wallet
-- **`simulated_usdc`** — platform-credited balance (from game payouts)
-
-When a game resolves, the API **credits each payout recipient's simulated balance** automatically. When joining a paid game, the API checks the combined balance against the buy-in and debits simulated balance first.
+- **`usdc_balance`** — the player's total spendable balance
+- **`on_chain_usdc`** — funded via Stripe checkout (real USDC on Solana)
+- **`simulated_usdc`** — credited/debited by game results via `player_results`
 
 ```
-Fund (Stripe checkout) → on_chain_usdc increases
-Join game (buy-in)     → simulated_usdc debited first, then on-chain
-Resolve (payout)       → simulated_usdc credited to winners
-GET player             → usdc_balance = on_chain_usdc + simulated_usdc
+Fund (Stripe checkout)  →  balance goes up
+Resolve (player won)    →  balance goes up   (you send positive net_usdc)
+Resolve (player lost)   →  balance goes down (you send negative net_usdc)
+Cashout                 →  balance → real money via Stripe (user-initiated)
 ```
+
+The API is a wallet. Your game tells it what happened. That's it.
 
 ---
 
@@ -385,52 +343,44 @@ GET player             → usdc_balance = on_chain_usdc + simulated_usdc
 
 ---
 
-## Demo Shortcut (Single-Player Free Game)
+## Typical Game Flow
 
 ```bash
-# 1. Create player
-curl -X POST http://localhost:3000/v1/players \
-  -H "X-API-Key: YOUR_KEY"
-# Save player_id from response
+# 1. Create player (once, at sign-up)
+curl -X POST /v1/players -H "X-API-Key: KEY"
+# → { "player_id": "abc-123", "public_key": "..." }
 
-# 2. Create game (with buy-in for real stakes)
-curl -X POST http://localhost:3000/v1/games \
-  -H "X-API-Key: YOUR_KEY" \
+# 2. Fund player (Stripe checkout, once)
+curl -X POST /v1/players/abc-123/checkout-session \
+  -H "X-API-Key: KEY" -H "Content-Type: application/json" \
+  -d '{"amount_usd": 5.00}'
+# → { "url": "https://checkout.stripe.com/..." }
+
+# 3. Create game
+curl -X POST /v1/games -H "X-API-Key: KEY" \
   -H "Content-Type: application/json" \
   -d '{"buy_in_usdc": "0.50", "max_players": 4}'
-# Save game_id from response
+# → { "game_id": "game-456", ... }
 
-# 3. Join with force_start + skip_debit (game handles economics at resolve)
-curl -X POST http://localhost:3000/v1/games/{game_id}/join \
-  -H "X-API-Key: YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"player_id": "{player_id}", "force_start": true, "skip_debit": true}'
-# status will be "active", no balance deducted yet
+# 4. Join (skip_debit — game handles economics at resolve)
+curl -X POST /v1/games/game-456/join -H "X-API-Key: KEY" \
+  -H "Content-Type: application/json" -H "Idempotency-Key: uuid1" \
+  -d '{"player_id": "abc-123", "force_start": true, "skip_debit": true}'
+# → { "status": "active" }
 
-# 4. Play your game client-side with bots...
+# 5. Game plays out client-side...
 
-# 5a. Resolve — player WON (credit winnings)
-curl -X POST http://localhost:3000/v1/games/{game_id}/resolve \
-  -H "X-API-Key: YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"winner": "{player_id}", "player_results": [{"player_id": "{player_id}", "net_usdc": "1.00"}]}'
+# 6. Resolve — tell the API what happened to the player's balance
+#    Player WON (1st place gets all):
+curl -X POST /v1/games/game-456/resolve -H "X-API-Key: KEY" \
+  -H "Content-Type: application/json" -H "Idempotency-Key: uuid2" \
+  -d '{"winner": "abc-123", "player_results": [{"player_id": "abc-123", "net_usdc": "1.00"}]}'
+#    Player LOST:
+#    -d '{"winner": "bot-1", "player_results": [{"player_id": "abc-123", "net_usdc": "-0.50"}]}'
 
-# 5b. Resolve — player LOST (deduct buy-in)
-curl -X POST http://localhost:3000/v1/games/{game_id}/resolve \
-  -H "X-API-Key: YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"winner": "{bot_player_id}", "player_results": [{"player_id": "{player_id}", "net_usdc": "-0.50"}]}'
-
-# 6. Check player balance (shows updated simulated_usdc)
-curl http://localhost:3000/v1/players/{player_id} \
-  -H "X-API-Key: YOUR_KEY"
-
-# 7. Confirm game final state
-curl http://localhost:3000/v1/games/{game_id} \
-  -H "X-API-Key: YOUR_KEY"
+# 7. Check balance
+curl /v1/players/abc-123 -H "X-API-Key: KEY"
+# → { "usdc_balance": 5.50, ... }
 ```
 
 ---
@@ -440,6 +390,6 @@ curl http://localhost:3000/v1/games/{game_id} \
 - Real on-chain escrow transfers
 - Real Solana settlement
 - Verified PDA addresses
-- More than top-2 payouts
+- Complicated payout splits
 
 Settlement is simulated (`settlement_mode: "simulated"`). The contracts are real — on-chain settlement plugs in later without changing the API shape.
