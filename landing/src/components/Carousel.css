@@ -66,15 +66,15 @@
 }
 
 .carousel-item-header {
-  margin-bottom: 16px;
-  padding: 20px;
-  padding-top: 20px;
+  margin-bottom: 20px;
+  padding: 24px;
+  padding-top: 28px;
 }
 
 .carousel-icon-container {
   display: flex;
-  height: 28px;
-  width: 28px;
+  height: 36px;
+  width: 36px;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
@@ -82,26 +82,27 @@
 }
 
 .carousel-icon {
-  height: 16px;
-  width: 16px;
+  height: 20px;
+  width: 20px;
   color: #060010;
 }
 
 .carousel-item-content {
-  padding: 20px;
-  padding-bottom: 20px;
+  padding: 24px;
+  padding-bottom: 28px;
 }
 
 .carousel-item-title {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-weight: 900;
-  font-size: 18px;
+  font-size: 22px;
   color: #fff;
 }
 
 .carousel-item-description {
-  font-size: 14px;
-  color: #fff;
+  font-size: 16px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .carousel-indicators-container {

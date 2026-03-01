@@ -1,0 +1,141 @@
+.rail {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 4vh 0;
+}
+
+.rail-segment {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.rail-segment:last-child {
+  flex: 0 0 auto;
+}
+
+/* ── Node ── */
+
+.rail-node {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: clamp(0.9rem, 2vw, 1.4rem) clamp(1.6rem, 3.5vw, 3.2rem);
+  border-radius: 999px;
+  border: 1px solid rgba(142, 228, 255, 0.2);
+  background: rgba(106, 92, 255, 0.06);
+  backdrop-filter: blur(6px);
+  animation: rail-glow 4s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.8s);
+}
+
+.rail-node-label {
+  font-weight: 700;
+  font-size: clamp(1rem, 2vw, 1.6rem);
+  color: #eef2ff;
+  white-space: nowrap;
+}
+
+.rail-node-sub {
+  font-size: clamp(0.7rem, 1.1vw, 0.9rem);
+  font-weight: 600;
+  color: rgba(174, 182, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* ── Track (two parallel rails + crossties) ── */
+
+.rail-track {
+  flex: 1;
+  min-width: 24px;
+  height: 14px;
+  margin: 0 clamp(0.4rem, 0.8vw, 0.75rem);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+}
+
+.rail-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    rgba(142, 228, 255, 0.25),
+    rgba(168, 85, 247, 0.2)
+  );
+}
+
+.rail-line--top {
+  top: 0;
+}
+
+.rail-line--bot {
+  bottom: 0;
+}
+
+.rail-tie {
+  width: 2px;
+  height: 100%;
+  background: rgba(142, 228, 255, 0.12);
+  border-radius: 1px;
+}
+
+/* ── Spark particle ── */
+
+.rail-spark {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8ee4ff;
+  box-shadow:
+    0 0 8px 3px rgba(142, 228, 255, 0.5),
+    0 0 20px 5px rgba(142, 228, 255, 0.15);
+  animation: spark-travel 3.5s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.8s + 0.4s);
+  opacity: 0;
+}
+
+/* ── Animations ── */
+
+@keyframes rail-glow {
+  0%,
+  100% {
+    border-color: rgba(142, 228, 255, 0.15);
+    box-shadow: 0 0 10px rgba(106, 92, 255, 0.08);
+  }
+  50% {
+    border-color: rgba(142, 228, 255, 0.45);
+    box-shadow:
+      0 0 24px rgba(106, 92, 255, 0.25),
+      0 0 48px rgba(142, 228, 255, 0.08);
+  }
+}
+
+@keyframes spark-travel {
+  0% {
+    left: -8px;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% + 8px);
+    opacity: 0;
+  }
+}

@@ -1,4 +1,5 @@
 import Carousel, { type CarouselItem } from './Carousel';
+import CompanyMarquee from './CompanyMarquee';
 import DecryptedText from './DecryptedText';
 import PaymentFlowDemo from './PaymentFlowDemo';
 import ScrollReveal from './ScrollReveal';
@@ -48,8 +49,7 @@ export default function Home() {
                     />
                 </h1>
                 <p className="subhead">
-                    Build unforgettable game economies with a sleek API that connects card payments, Solana flows, and
-                    seamless payout rails for any crypto-native platform.
+                    The payments layer for web3 games. Card in, crypto out, no wallets required.
                 </p>
 
                 <div className="hero-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -65,9 +65,6 @@ export default function Home() {
             </section>
 
             <section className="demo-section">
-                <ScrollReveal baseRotation={0} containerClassName="demo-reveal" textClassName="demo-reveal-text">
-                    Stripe to USDC to burner wallet and back to Stripe, fully streamlined.
-                </ScrollReveal>
                 <div className="demo-player-wrap">
                     <PaymentFlowDemo />
                 </div>
@@ -76,9 +73,11 @@ export default function Home() {
             <section className="carousel-section">
                 <h2 className="carousel-title">Platform Capabilities</h2>
                 <div className="carousel-wrap">
-                    <Carousel items={pillars} baseWidth={420} autoplay autoplayDelay={2600} pauseOnHover loop />
+                    <Carousel items={pillars} baseWidth={560} autoplay autoplayDelay={2600} pauseOnHover loop />
                 </div>
             </section>
+
+            <CompanyMarquee />
         </>
     );
 }
