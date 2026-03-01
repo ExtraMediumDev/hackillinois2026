@@ -38,17 +38,25 @@ Get wallet balance.
 
 ### `POST /v1/wallets/:id/deposit`
 
-Fund wallet via Stripe Checkout.
+Fund wallet via Stripe Checkout. Caller provides `redirect_url` — Stripe redirects the user back there with `?status=success` or `?status=cancelled` appended.
 
 ```json
-// Request (optional)
-{ "amount_usd": 5.00 }
+// Request
+{
+  "redirect_url": "https://myapp.com/funded",
+  "amount_usd": 5.00
+}
 
 // Response 200
 { "url": "https://checkout.stripe.com/...", "amount_usd": 5.00 }
 ```
 
-Redirect the user to the returned URL. On payment success, the webhook credits the wallet.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `redirect_url` | Yes | Where Stripe sends the user after checkout. API appends `?status=success` or `?status=cancelled`. |
+| `amount_usd` | No | Defaults to 0.50. Minimum 0.50 (Stripe limit). |
+
+Redirect the user to the returned `url`. On payment success, the webhook credits the wallet.
 
 ### `POST /v1/wallets/:id/transfer`
 
@@ -174,7 +182,7 @@ curl -X POST /v1/wallets -H "X-API-Key: KEY"
 # 2. Deposit
 curl -X POST /v1/wallets/abc-123/deposit \
   -H "X-API-Key: KEY" -H "Content-Type: application/json" \
-  -d '{"amount_usd": 5.00}'
+  -d '{"redirect_url": "https://myapp.com/funded", "amount_usd": 5.00}'
 # → { "url": "https://checkout.stripe.com/..." }
 
 # 3. Your app runs... player wins $2
