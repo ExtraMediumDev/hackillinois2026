@@ -14,8 +14,9 @@
 4. Join Game             POST /v1/games/:id/join  (with force_start: true for single-player)
 5. [Optional] Start      POST /v1/games/:id/start
 6. Play (move or client) POST /v1/games/:id/move  (grid games only)
-7. Resolve               POST /v1/games/:id/resolve
+7. Resolve               POST /v1/games/:id/resolve  (credits in-app balance only)
 8. Check Final State     GET  /v1/games/:id
+9. Cash Out              POST /v1/players/:id/cashout  (user-initiated Stripe withdrawal)
 ```
 
 ---
@@ -148,7 +149,9 @@ Moves a player on the 10x10 grid. Only relevant for grid-based games — skip th
 
 ### 7. `POST /v1/games/:id/resolve`
 
-**For client-authoritative games.** Reports the final outcome to the platform and triggers simulated payout settlement.
+**For client-authoritative games.** Reports the final outcome to the platform and credits winners' in-app balances.
+
+**Important:** Resolve only credits in-app balance (`simulated_usdc`). It does NOT trigger a Stripe withdrawal. Players cash out explicitly via `POST /v1/players/:id/cashout`.
 
 ```json
 // Header: Idempotency-Key: <uuid>
@@ -184,9 +187,31 @@ Moves a player on the 10x10 grid. Only relevant for grid-based games — skip th
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `winner` | Yes | Must be a `player_id` that joined the game |
+| `winner` | Yes | Must be a `player_id` that joined the game (can be a bot) |
 | `placements` | No | If omitted, winner gets 1st, everyone else 2nd+ |
-| `distribution` | No | Array of percentages summing to 100. Default: `[70, 30]` for 2+ players, `[100]` for solo |
+| `distribution` | No | Array of percentages summing to **at most** 100. Default: `[70, 30]` for 2+ players, `[100]` for solo. Unclaimed % stays in pool. |
+
+#### 1-Human + Bots Scenario
+
+When the winner is a bot, only include the human in `placements` with their share:
+
+```json
+// Human places 2nd, gets 30% of pool
+{
+  "winner": "<bot_player_id>",
+  "placements": [{ "player_id": "<human_player_id>", "place": 2 }],
+  "distribution": [30]
+}
+
+// Human wins, gets 100% of pool
+{
+  "winner": "<human_player_id>",
+  "placements": [{ "player_id": "<human_player_id>", "place": 1 }],
+  "distribution": [100]
+}
+```
+
+Only real players (those with a Redis record) receive balance credits. Bot `player_id`s are valid for `winner` (they must have joined the game) but are silently skipped for balance crediting.
 
 ### 8. `GET /v1/games/:id`
 
@@ -221,6 +246,40 @@ Returns full game state. After resolution, includes placements, payouts, and set
 ```
 
 Fields `placements`, `payouts`, `distribution_rule` only appear after the game is resolved. `settlement_status` is `"none"` before resolution and `"completed"` after.
+
+### 9. `POST /v1/players/:id/cashout`
+
+**Withdraws funds to real money via Stripe.** This is the only endpoint that triggers a Stripe payout. Called when the user clicks "Cash Out" — never triggered automatically by resolve.
+
+```json
+// Request (optional body)
+{ "amount_usdc": 1.50 }
+
+// Response 200
+{
+  "status": "settled",
+  "solana_signature": "...",
+  "stripe_payout_id": "po_...",
+  "amount_transferred": 1.50,
+  "settlement_mode": "demo",
+  "fiat_payout_status": "pending",
+  "payout_destination_connect_account_id": "acct_..."
+}
+```
+
+Requires the player to have a connected Stripe account (via onboarding). If `amount_usdc` is omitted, cashes out the full balance.
+
+---
+
+## Money Flow
+
+```
+Stripe Checkout  ──▶  on_chain_usdc (fund)
+Join game        ──▶  simulated_usdc debited first, then on-chain
+Resolve          ──▶  simulated_usdc credited (in-app only, NO Stripe)
+GET player       ──▶  usdc_balance = on_chain_usdc + simulated_usdc
+Cashout          ──▶  Stripe payout (explicit, user-initiated)
+```
 
 ---
 

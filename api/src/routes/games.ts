@@ -640,11 +640,11 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
 
       if (distribution && distribution.length > 0) {
         const sum = distribution.reduce((a, b) => a + b, 0);
-        if (Math.abs(sum - 100) > 0.01) {
+        if (sum > 100 + 0.01) {
           return reply.code(400).send(spliceError(
             'INVALID_DISTRIBUTION', 400,
-            `Distribution percentages sum to ${sum}, must equal 100.`,
-            'Provide an array of percentages that sum to 100, e.g. [70, 30].',
+            `Distribution percentages sum to ${sum}, must be <= 100.`,
+            'Provide an array of percentages that sum to at most 100, e.g. [70, 30] or [30] for partial.',
           ));
         }
         payoutPercentages = distribution;
@@ -653,6 +653,7 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         payoutPercentages = finalPlacements.length >= 2 ? [70, 30] : [100];
       }
 
+      const distSum = payoutPercentages.reduce((a, b) => a + b, 0);
       const distributionRule = payoutPercentages.join('/');
 
       const payouts: GamePayout[] = [];
@@ -661,8 +662,8 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       for (let i = 0; i < payoutCount; i++) {
         const pct = payoutPercentages[i];
         const isLast = i === payoutCount - 1;
-        // Last recipient gets the remainder to avoid rounding drift
-        const amount = isLast
+        // Last recipient gets remainder only when distribution sums to 100
+        const amount = (isLast && Math.abs(distSum - 100) < 0.01)
           ? parseFloat((pool - distributed).toFixed(2))
           : parseFloat(((pool * pct) / 100).toFixed(2));
         distributed += amount;
