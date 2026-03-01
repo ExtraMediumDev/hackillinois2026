@@ -200,11 +200,11 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ── POST /games/:id/join ──────────────────────────────────────────────────
-  app.post<{ Params: { id: string }; Body: { player_id: string; force_start?: boolean } }>(
+  app.post<{ Params: { id: string }; Body: { player_id: string; force_start?: boolean; skip_debit?: boolean } }>(
     '/games/:id/join',
     {
       schema: {
-        description: 'Join a game lobby. Requires Idempotency-Key header. Pass force_start to activate with fewer than max_players.',
+        description: 'Join a game lobby. Requires Idempotency-Key header. Pass force_start to activate with fewer than max_players. Pass skip_debit to defer balance handling to resolve (for bot/client-authoritative games).',
         tags: ['Games'],
         security: [{ apiKey: [] }],
         params: {
@@ -217,6 +217,7 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             player_id: { type: 'string' },
             force_start: { type: 'boolean' },
+            skip_debit: { type: 'boolean' },
           },
           required: ['player_id'],
         },
@@ -227,7 +228,7 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       reply: FastifyReply,
     ) => {
       const { id } = request.params as { id: string };
-      const { player_id, force_start } = request.body as { player_id: string; force_start?: boolean };
+      const { player_id, force_start, skip_debit } = request.body as { player_id: string; force_start?: boolean; skip_debit?: boolean };
 
       const game = await getGame(id);
       if (!game) {
@@ -271,23 +272,25 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         ));
       }
 
-      const onChainBalance = await getTokenBalance(player.public_key, USDC_MINT);
-      const simulatedBalance = player.simulated_usdc_balance ?? 0;
-      const totalBalance = onChainBalance + simulatedBalance;
       const buyIn = parseFloat(game.buy_in_usdc);
-      if (totalBalance < buyIn) {
-        return reply.code(402).send(spliceError(
-          'INSUFFICIENT_FUNDS', 402,
-          `Player has ${totalBalance.toFixed(2)} USDC but buy-in is ${game.buy_in_usdc}.`,
-          'Fund the player via POST /v1/players/:id/checkout-session.',
-        ));
-      }
 
-      // Debit simulated balance first, then on-chain covers the rest
-      if (buyIn > 0 && simulatedBalance > 0) {
-        const debit = Math.min(simulatedBalance, buyIn);
-        player.simulated_usdc_balance = simulatedBalance - debit;
-        await savePlayer(player);
+      if (!skip_debit) {
+        const onChainBalance = await getTokenBalance(player.public_key, USDC_MINT);
+        const simulatedBalance = player.simulated_usdc_balance ?? 0;
+        const totalBalance = onChainBalance + simulatedBalance;
+        if (totalBalance < buyIn) {
+          return reply.code(402).send(spliceError(
+            'INSUFFICIENT_FUNDS', 402,
+            `Player has ${totalBalance.toFixed(2)} USDC but buy-in is ${game.buy_in_usdc}.`,
+            'Fund the player via POST /v1/players/:id/checkout-session.',
+          ));
+        }
+
+        if (buyIn > 0 && simulatedBalance > 0) {
+          const debit = Math.min(simulatedBalance, buyIn);
+          player.simulated_usdc_balance = simulatedBalance - debit;
+          await savePlayer(player);
+        }
       }
 
       const spawn = findSpawnPosition(game.grid, game.players);
@@ -527,12 +530,13 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       winner: string;
       placements?: Array<{ player_id: string; place: number }>;
       distribution?: number[];
+      player_results?: Array<{ player_id: string; net_usdc: string }>;
     };
   }>(
     '/games/:id/resolve',
     {
       schema: {
-        description: 'Externally resolve a game with winner, placements, and optional custom payout distribution. Requires Idempotency-Key header.',
+        description: 'Externally resolve a game. Use player_results for explicit per-player balance changes (bot games), or placements + distribution for pool-based payouts. Requires Idempotency-Key header.',
         tags: ['Games'],
         security: [{ apiKey: [] }],
         params: {
@@ -559,6 +563,17 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
               type: 'array',
               items: { type: 'number' },
             },
+            player_results: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  player_id: { type: 'string' },
+                  net_usdc: { type: 'string' },
+                },
+                required: ['player_id', 'net_usdc'],
+              },
+            },
           },
           required: ['winner'],
         },
@@ -569,10 +584,11 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       reply: FastifyReply,
     ) => {
       const { id } = request.params as { id: string };
-      const { winner, placements, distribution } = request.body as {
+      const { winner, placements, distribution, player_results } = request.body as {
         winner: string;
         placements?: Array<{ player_id: string; place: number }>;
         distribution?: number[];
+        player_results?: Array<{ player_id: string; net_usdc: string }>;
       };
 
       const game = await getGame(id);
@@ -609,7 +625,76 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         ));
       }
 
-      // Build canonical placements: use provided or default (winner 1st, rest 2nd)
+      // ── Explicit player_results mode (for bot/client-authoritative games) ──
+      // The game tells us exactly what happens to each real player's balance.
+      // Positive net_usdc = credit (won), negative = debit (lost).
+      if (player_results && player_results.length > 0) {
+        const payouts: GamePayout[] = [];
+        const resultPlacements: GamePlacement[] = [];
+
+        for (const result of player_results) {
+          const net = parseFloat(result.net_usdc);
+          if (isNaN(net)) {
+            return reply.code(400).send(spliceError(
+              'INVALID_PLAYER_RESULT', 400,
+              `net_usdc "${result.net_usdc}" is not a valid number.`,
+              'Provide a decimal string like "0.50" or "-0.50".',
+            ));
+          }
+
+          const recipient = await getPlayer(result.player_id);
+          if (!recipient) {
+            return reply.code(404).send(spliceError(
+              'PLAYER_NOT_FOUND', 404,
+              `Player ${result.player_id} not found.`,
+              'Only include real player_ids (not bots) in player_results.',
+            ));
+          }
+
+          recipient.simulated_usdc_balance = (recipient.simulated_usdc_balance ?? 0) + net;
+          if (recipient.simulated_usdc_balance < 0) recipient.simulated_usdc_balance = 0;
+          await savePlayer(recipient);
+
+          payouts.push({
+            player_id: result.player_id,
+            amount_usdc: net.toFixed(2),
+            status: 'simulated',
+            settlement_mode: 'simulated',
+          });
+        }
+
+        // Build placements from provided or from player_results order
+        if (placements && placements.length > 0) {
+          for (const p of placements) {
+            resultPlacements.push({ player_id: p.player_id, place: p.place });
+          }
+        } else {
+          player_results.forEach((r, i) => {
+            resultPlacements.push({ player_id: r.player_id, place: i + 1 });
+          });
+        }
+
+        game.status = 'resolved';
+        game.winner = winner;
+        game.placements = resultPlacements;
+        game.payouts = payouts;
+        game.distribution_rule = 'explicit';
+        game.settlement_status = 'completed';
+        await saveGame(game);
+
+        return reply.send({
+          game_id: game.game_id,
+          status: game.status,
+          winner: game.winner,
+          prize_pool_usdc: game.prize_pool_usdc,
+          placements: game.placements,
+          payouts: game.payouts,
+          distribution_rule: game.distribution_rule,
+          settlement_status: game.settlement_status,
+        });
+      }
+
+      // ── Pool-based distribution mode (multiplayer, all real players) ──
       let finalPlacements: GamePlacement[];
       if (placements && placements.length > 0) {
         for (const p of placements) {
@@ -634,7 +719,6 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
 
       finalPlacements.sort((a, b) => a.place - b.place);
 
-      // Build payout distribution
       const pool = parseFloat(game.prize_pool_usdc);
       let payoutPercentages: number[];
 
@@ -649,7 +733,6 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         }
         payoutPercentages = distribution;
       } else {
-        // Default: 70/30 if 2+ placements, else 100%
         payoutPercentages = finalPlacements.length >= 2 ? [70, 30] : [100];
       }
 
@@ -662,7 +745,6 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       for (let i = 0; i < payoutCount; i++) {
         const pct = payoutPercentages[i];
         const isLast = i === payoutCount - 1;
-        // Last recipient gets remainder only when distribution sums to 100
         const amount = (isLast && Math.abs(distSum - 100) < 0.01)
           ? parseFloat((pool - distributed).toFixed(2))
           : parseFloat(((pool * pct) / 100).toFixed(2));
@@ -683,7 +765,6 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       game.distribution_rule = distributionRule;
       game.settlement_status = 'completed';
 
-      // Credit each payout recipient's simulated balance
       for (const payout of payouts) {
         const creditAmount = parseFloat(payout.amount_usdc);
         if (creditAmount > 0) {

@@ -89,7 +89,10 @@ Creates a game lobby. Use `"0.00"` for free/demo games.
 
 Joins a player to a game. Requires `Idempotency-Key` header (any UUID).
 
-Pass `force_start: true` to immediately activate the game with 1 player (for single-player, bots, practice, demo).
+| Option | Default | Description |
+|--------|---------|-------------|
+| `force_start` | `false` | Immediately activate the game (for single-player, bots, demo) |
+| `skip_debit` | `false` | Don't deduct buy-in on join — defer balance handling to `/resolve` (use for bot games where the game controls economics) |
 
 ```json
 // Header: Idempotency-Key: <uuid>
@@ -149,9 +152,54 @@ Moves a player on the 10x10 grid. Only relevant for grid-based games — skip th
 
 ### 7. `POST /v1/games/:id/resolve`
 
-**For client-authoritative games.** Reports the final outcome to the platform and credits winners' in-app balances.
+**For client-authoritative games.** Reports the final outcome and settles balances.
 
-**Important:** Resolve only credits in-app balance (`simulated_usdc`). It does NOT trigger a Stripe withdrawal. Players cash out explicitly via `POST /v1/players/:id/cashout`.
+**Important:** Resolve only updates in-app balance (`simulated_usdc`). It does NOT trigger a Stripe withdrawal. Players cash out explicitly via `POST /v1/players/:id/cashout`.
+
+Two modes:
+
+#### Mode A: `player_results` (recommended for bot games)
+
+The game tells the API exactly what happens to each **real** player's balance. Bots are never mentioned. Positive = credit, negative = debit.
+
+```json
+// Header: Idempotency-Key: <uuid>
+
+// Human LOST — deduct the buy-in
+{
+  "winner": "<bot_player_id>",
+  "player_results": [
+    { "player_id": "<human_player_id>", "net_usdc": "-0.50" }
+  ]
+}
+
+// Human WON — credit winnings
+{
+  "winner": "<human_player_id>",
+  "player_results": [
+    { "player_id": "<human_player_id>", "net_usdc": "1.00" }
+  ]
+}
+
+// Response 200
+{
+  "game_id": "uuid",
+  "status": "resolved",
+  "winner": "<player_id>",
+  "prize_pool_usdc": "0.50",
+  "payouts": [
+    { "player_id": "<human>", "amount_usdc": "-0.50", "status": "simulated", "settlement_mode": "simulated" }
+  ],
+  "distribution_rule": "explicit",
+  "settlement_status": "completed"
+}
+```
+
+Use with `skip_debit: true` on join so the buy-in isn't taken upfront — the game handles all economics at resolve time.
+
+#### Mode B: `placements` + `distribution` (pool-based, all real players)
+
+For games where all players are real and the pool is split by percentage.
 
 ```json
 // Header: Idempotency-Key: <uuid>
@@ -187,31 +235,10 @@ Moves a player on the 10x10 grid. Only relevant for grid-based games — skip th
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `winner` | Yes | Must be a `player_id` that joined the game (can be a bot) |
+| `winner` | Yes | Must be a `player_id` that joined the game |
+| `player_results` | No | Explicit balance changes per real player. If provided, `placements`/`distribution` are ignored for payout math. |
 | `placements` | No | If omitted, winner gets 1st, everyone else 2nd+ |
-| `distribution` | No | Array of percentages summing to **at most** 100. Default: `[70, 30]` for 2+ players, `[100]` for solo. Unclaimed % stays in pool. |
-
-#### 1-Human + Bots Scenario
-
-When the winner is a bot, only include the human in `placements` with their share:
-
-```json
-// Human places 2nd, gets 30% of pool
-{
-  "winner": "<bot_player_id>",
-  "placements": [{ "player_id": "<human_player_id>", "place": 2 }],
-  "distribution": [30]
-}
-
-// Human wins, gets 100% of pool
-{
-  "winner": "<human_player_id>",
-  "placements": [{ "player_id": "<human_player_id>", "place": 1 }],
-  "distribution": [100]
-}
-```
-
-Only real players (those with a Redis record) receive balance credits. Bot `player_id`s are valid for `winner` (they must have joined the game) but are silently skipped for balance crediting.
+| `distribution` | No | Array of percentages summing to at most 100. Default: `[70, 30]` for 2+, `[100]` for solo |
 
 ### 8. `GET /v1/games/:id`
 
@@ -326,7 +353,8 @@ All errors use this shape:
 | `OUT_OF_BOUNDS` | 400 | Move off grid edge |
 | `INVALID_WINNER` | 400 | Winner player_id not in game |
 | `INVALID_PLACEMENT` | 400 | Placement player_id not in game |
-| `INVALID_DISTRIBUTION` | 400 | Percentages don't sum to 100 |
+| `INVALID_DISTRIBUTION` | 400 | Percentages sum to more than 100 |
+| `INVALID_PLAYER_RESULT` | 400 | `net_usdc` is not a valid number |
 | `MISSING_IDEMPOTENCY_KEY` | 400 | Required header missing on join/move/start/resolve |
 | `REQUEST_IN_FLIGHT` | 409 | Duplicate idempotency key still processing |
 
@@ -365,31 +393,42 @@ curl -X POST http://localhost:3000/v1/players \
   -H "X-API-Key: YOUR_KEY"
 # Save player_id from response
 
-# 2. Create free game
+# 2. Create game (with buy-in for real stakes)
 curl -X POST http://localhost:3000/v1/games \
   -H "X-API-Key: YOUR_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"buy_in_usdc": "0.00", "max_players": 4}'
+  -d '{"buy_in_usdc": "0.50", "max_players": 4}'
 # Save game_id from response
 
-# 3. Join with force_start (immediately active, no funding needed)
+# 3. Join with force_start + skip_debit (game handles economics at resolve)
 curl -X POST http://localhost:3000/v1/games/{game_id}/join \
   -H "X-API-Key: YOUR_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"player_id": "{player_id}", "force_start": true}'
-# status will be "active"
+  -d '{"player_id": "{player_id}", "force_start": true, "skip_debit": true}'
+# status will be "active", no balance deducted yet
 
-# 4. Play your game client-side...
+# 4. Play your game client-side with bots...
 
-# 5. Resolve when done
+# 5a. Resolve — player WON (credit winnings)
 curl -X POST http://localhost:3000/v1/games/{game_id}/resolve \
   -H "X-API-Key: YOUR_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"winner": "{player_id}", "distribution": [100]}'
+  -d '{"winner": "{player_id}", "player_results": [{"player_id": "{player_id}", "net_usdc": "1.00"}]}'
 
-# 6. Confirm final state
+# 5b. Resolve — player LOST (deduct buy-in)
+curl -X POST http://localhost:3000/v1/games/{game_id}/resolve \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"winner": "{bot_player_id}", "player_results": [{"player_id": "{player_id}", "net_usdc": "-0.50"}]}'
+
+# 6. Check player balance (shows updated simulated_usdc)
+curl http://localhost:3000/v1/players/{player_id} \
+  -H "X-API-Key: YOUR_KEY"
+
+# 7. Confirm game final state
 curl http://localhost:3000/v1/games/{game_id} \
   -H "X-API-Key: YOUR_KEY"
 ```
