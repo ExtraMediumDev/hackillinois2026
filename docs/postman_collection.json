@@ -89,7 +89,7 @@
       }
     },
     {
-      "name": "4. Join Game (Player 1)",
+      "name": "4. Join Game (Player 1, force_start)",
       "request": {
         "method": "POST",
         "header": [
@@ -99,9 +99,21 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"player_id\": \"{{player_id}}\"\n}"
+          "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"force_start\": true\n}"
         },
         "url": "{{base_url}}/v1/games/{{game_id}}/join"
+      }
+    },
+    {
+      "name": "4b. Start Game (manual)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "url": "{{base_url}}/v1/games/{{game_id}}/start"
       }
     },
     {
@@ -137,7 +149,23 @@
       }
     },
     {
-      "name": "6. Get Game (confirm winner)",
+      "name": "6. Resolve Game (external, custom %)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"winner\": \"{{player_id}}\",\n  \"placements\": [\n    { \"player_id\": \"{{player_id}}\", \"place\": 1 }\n  ],\n  \"distribution\": [100]\n}"
+        },
+        "url": "{{base_url}}/v1/games/{{game_id}}/resolve"
+      }
+    },
+    {
+      "name": "7. Get Game (confirm resolution + payouts)",
       "request": {
         "method": "GET",
         "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],

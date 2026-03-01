@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { saveGame, getGame, getPlayer } from '../services/redis';
 import { withIdempotency } from '../services/idempotency';
 import { getTokenBalance } from '../services/solana';
-import { GameRecord, GamePlayer, SpliceError } from '../types';
+import { GameRecord, GamePlayer, GamePlacement, GamePayout, SpliceError } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,12 +88,12 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       const buyIn = request.body?.buy_in_usdc ?? '0.50';
       const maxPlayers = request.body?.max_players ?? 4;
 
-      if (!isValidMoney(buyIn) || parseFloat(buyIn) <= 0) {
+      if (!isValidMoney(buyIn) || parseFloat(buyIn) < 0) {
         return reply.code(400).send(spliceError(
           'INVALID_BUY_IN',
           400,
-          'buy_in_usdc must be a positive decimal string with up to 2 decimal places.',
-          'Use a value like "0.50".',
+          'buy_in_usdc must be a non-negative decimal string with up to 2 decimal places.',
+          'Use a value like "0.50" or "0.00" for free games.',
         ));
       }
 
@@ -170,12 +170,13 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         ));
       }
 
-      return reply.send({
+      const response: Record<string, unknown> = {
         game_id: game.game_id,
         status: game.status,
         grid_size: game.grid_size,
         grid: game.grid,
         players: game.players.map(p => ({
+          player_id: p.player_id,
           pubkey: p.pubkey,
           x: p.x,
           y: p.y,
@@ -187,16 +188,23 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         collapse_round: game.collapse_round,
         winner: game.winner,
         stripe_payout_initiated: game.stripe_payout_initiated,
-      });
+      };
+
+      if (game.placements) response.placements = game.placements;
+      if (game.payouts) response.payouts = game.payouts;
+      if (game.distribution_rule) response.distribution_rule = game.distribution_rule;
+      response.settlement_status = game.settlement_status ?? 'none';
+
+      return reply.send(response);
     },
   );
 
   // ── POST /games/:id/join ──────────────────────────────────────────────────
-  app.post<{ Params: { id: string }; Body: { player_id: string } }>(
+  app.post<{ Params: { id: string }; Body: { player_id: string; force_start?: boolean } }>(
     '/games/:id/join',
     {
       schema: {
-        description: 'Join a game lobby. Requires Idempotency-Key header.',
+        description: 'Join a game lobby. Requires Idempotency-Key header. Pass force_start to activate with fewer than max_players.',
         tags: ['Games'],
         security: [{ apiKey: [] }],
         params: {
@@ -206,7 +214,10 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         },
         body: {
           type: 'object',
-          properties: { player_id: { type: 'string' } },
+          properties: {
+            player_id: { type: 'string' },
+            force_start: { type: 'boolean' },
+          },
           required: ['player_id'],
         },
       },
@@ -216,7 +227,7 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       reply: FastifyReply,
     ) => {
       const { id } = request.params as { id: string };
-      const { player_id } = request.body as { player_id: string };
+      const { player_id, force_start } = request.body as { player_id: string; force_start?: boolean };
 
       const game = await getGame(id);
       if (!game) {
@@ -283,7 +294,7 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       const currentPool = parseFloat(game.prize_pool_usdc);
       game.prize_pool_usdc = (currentPool + buyIn).toFixed(2);
 
-      if (game.players.length >= 2) {
+      if (game.players.length >= 2 || force_start === true) {
         game.status = 'active';
       }
 
@@ -297,6 +308,72 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         status: game.status,
       };
       return reply.code(200).send(response);
+    }),
+  );
+
+  // ── POST /games/:id/start ─────────────────────────────────────────────────
+  app.post<{ Params: { id: string } }>(
+    '/games/:id/start',
+    {
+      schema: {
+        description: 'Manually start a game. Transitions waiting -> active. Requires Idempotency-Key header.',
+        tags: ['Games'],
+        security: [{ apiKey: [] }],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+      },
+    },
+    withIdempotency(async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const { id } = request.params as { id: string };
+
+      const game = await getGame(id);
+      if (!game) {
+        return reply.code(404).send(spliceError(
+          'GAME_NOT_FOUND', 404,
+          `Game ${id} not found.`,
+          'Create a game first via POST /v1/games.',
+        ));
+      }
+
+      if (game.status === 'resolved') {
+        return reply.code(409).send(spliceError(
+          'GAME_ALREADY_RESOLVED', 409,
+          'Game has already been resolved.',
+          'Create a new game.',
+        ));
+      }
+
+      if (game.status === 'active') {
+        return reply.send({
+          game_id: game.game_id,
+          status: game.status,
+          players: game.players.length,
+          message: 'Game is already active.',
+        });
+      }
+
+      if (game.players.length === 0) {
+        return reply.code(409).send(spliceError(
+          'GAME_NOT_STARTABLE', 409,
+          'Game has no players.',
+          'At least one player must join before starting.',
+        ));
+      }
+
+      game.status = 'active';
+      await saveGame(game);
+
+      return reply.send({
+        game_id: game.game_id,
+        status: game.status,
+        players: game.players.length,
+      });
     }),
   );
 
@@ -431,6 +508,183 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         collapse_round: game.collapse_round,
       };
       return reply.code(200).send(response);
+    }),
+  );
+
+  // ── POST /games/:id/resolve ────────────────────────────────────────────────
+  app.post<{
+    Params: { id: string };
+    Body: {
+      winner: string;
+      placements?: Array<{ player_id: string; place: number }>;
+      distribution?: number[];
+    };
+  }>(
+    '/games/:id/resolve',
+    {
+      schema: {
+        description: 'Externally resolve a game with winner, placements, and optional custom payout distribution. Requires Idempotency-Key header.',
+        tags: ['Games'],
+        security: [{ apiKey: [] }],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: {
+          type: 'object',
+          properties: {
+            winner: { type: 'string' },
+            placements: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  player_id: { type: 'string' },
+                  place: { type: 'number' },
+                },
+                required: ['player_id', 'place'],
+              },
+            },
+            distribution: {
+              type: 'array',
+              items: { type: 'number' },
+            },
+          },
+          required: ['winner'],
+        },
+      },
+    },
+    withIdempotency(async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const { id } = request.params as { id: string };
+      const { winner, placements, distribution } = request.body as {
+        winner: string;
+        placements?: Array<{ player_id: string; place: number }>;
+        distribution?: number[];
+      };
+
+      const game = await getGame(id);
+      if (!game) {
+        return reply.code(404).send(spliceError(
+          'GAME_NOT_FOUND', 404,
+          `Game ${id} not found.`,
+          'Check the game ID.',
+        ));
+      }
+
+      if (game.status === 'resolved') {
+        return reply.code(409).send(spliceError(
+          'GAME_ALREADY_RESOLVED', 409,
+          'Game has already been resolved.',
+          'Use GET /v1/games/:id to retrieve final state.',
+        ));
+      }
+
+      if (game.status !== 'active') {
+        return reply.code(409).send(spliceError(
+          'GAME_NOT_ACTIVE', 409,
+          `Game is ${game.status}. Only active games can be resolved.`,
+          'Start the game first via POST /v1/games/:id/start or join with force_start.',
+        ));
+      }
+
+      const winnerInGame = game.players.find(p => p.player_id === winner);
+      if (!winnerInGame) {
+        return reply.code(400).send(spliceError(
+          'INVALID_WINNER', 400,
+          `Player ${winner} is not in this game.`,
+          'Provide a player_id that has joined the game.',
+        ));
+      }
+
+      // Build canonical placements: use provided or default (winner 1st, rest 2nd)
+      let finalPlacements: GamePlacement[];
+      if (placements && placements.length > 0) {
+        for (const p of placements) {
+          if (!game.players.some(gp => gp.player_id === p.player_id)) {
+            return reply.code(400).send(spliceError(
+              'INVALID_PLACEMENT', 400,
+              `Player ${p.player_id} in placements is not in this game.`,
+              'Only include player_ids that have joined the game.',
+            ));
+          }
+        }
+        finalPlacements = placements.map(p => ({ player_id: p.player_id, place: p.place }));
+      } else {
+        finalPlacements = [{ player_id: winner, place: 1 }];
+        let place = 2;
+        for (const gp of game.players) {
+          if (gp.player_id !== winner) {
+            finalPlacements.push({ player_id: gp.player_id, place: place++ });
+          }
+        }
+      }
+
+      finalPlacements.sort((a, b) => a.place - b.place);
+
+      // Build payout distribution
+      const pool = parseFloat(game.prize_pool_usdc);
+      let payoutPercentages: number[];
+
+      if (distribution && distribution.length > 0) {
+        const sum = distribution.reduce((a, b) => a + b, 0);
+        if (Math.abs(sum - 100) > 0.01) {
+          return reply.code(400).send(spliceError(
+            'INVALID_DISTRIBUTION', 400,
+            `Distribution percentages sum to ${sum}, must equal 100.`,
+            'Provide an array of percentages that sum to 100, e.g. [70, 30].',
+          ));
+        }
+        payoutPercentages = distribution;
+      } else {
+        // Default: 70/30 if 2+ placements, else 100%
+        payoutPercentages = finalPlacements.length >= 2 ? [70, 30] : [100];
+      }
+
+      const distributionRule = payoutPercentages.join('/');
+
+      const payouts: GamePayout[] = [];
+      let distributed = 0;
+      const payoutCount = Math.min(payoutPercentages.length, finalPlacements.length);
+      for (let i = 0; i < payoutCount; i++) {
+        const pct = payoutPercentages[i];
+        const isLast = i === payoutCount - 1;
+        // Last recipient gets the remainder to avoid rounding drift
+        const amount = isLast
+          ? parseFloat((pool - distributed).toFixed(2))
+          : parseFloat(((pool * pct) / 100).toFixed(2));
+        distributed += amount;
+
+        payouts.push({
+          player_id: finalPlacements[i].player_id,
+          amount_usdc: amount.toFixed(2),
+          status: 'simulated',
+          settlement_mode: 'simulated',
+        });
+      }
+
+      game.status = 'resolved';
+      game.winner = winner;
+      game.placements = finalPlacements;
+      game.payouts = payouts;
+      game.distribution_rule = distributionRule;
+      game.settlement_status = 'completed';
+
+      await saveGame(game);
+
+      return reply.send({
+        game_id: game.game_id,
+        status: game.status,
+        winner: game.winner,
+        prize_pool_usdc: game.prize_pool_usdc,
+        placements: game.placements,
+        payouts: game.payouts,
+        distribution_rule: game.distribution_rule,
+        settlement_status: game.settlement_status,
+      });
     }),
   );
 }

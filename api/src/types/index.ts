@@ -42,12 +42,26 @@ export interface SpliceError {
 
 export type GameStatus = 'waiting' | 'active' | 'resolved';
 
+export type SettlementStatus = 'none' | 'processing' | 'completed';
+
 export interface GamePlayer {
   player_id: string;
   pubkey: string;
   x: number;
   y: number;
   alive: boolean;
+}
+
+export interface GamePlacement {
+  player_id: string;
+  place: number;
+}
+
+export interface GamePayout {
+  player_id: string;
+  amount_usdc: string;
+  status: 'pending' | 'settled' | 'simulated';
+  settlement_mode: 'simulated' | 'on_chain';
 }
 
 export interface GameRecord {
@@ -66,4 +80,8 @@ export interface GameRecord {
   winner: string | null;
   stripe_payout_initiated: boolean;
   created_at: number;
+  placements?: GamePlacement[];
+  payouts?: GamePayout[];
+  distribution_rule?: string;
+  settlement_status?: SettlementStatus;
 }
