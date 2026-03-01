@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import DecryptedText from './DecryptedText';
 import AnimatedList from './AnimatedList';
 
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
+
 type HttpMethod = 'GET' | 'POST';
 
 interface EndpointParam {
@@ -36,7 +38,7 @@ const endpoints: EndpointDef[] = [
         description: 'Returns API status and version. No authentication required.',
         auth: false,
         responseExample: `{ "status": "ok", "version": "1.0.0" }`,
-        curl: `curl http://localhost:3000/health`,
+        curl: `curl ${API_BASE}/health`,
     },
     {
         method: 'POST',
@@ -48,7 +50,7 @@ const endpoints: EndpointDef[] = [
   "wallet_id": "550e8400-e29b-41d4-a716-446655440000",
   "public_key": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
 }`,
-        curl: `curl -X POST http://localhost:3000/v1/wallets \\
+        curl: `curl -X POST ${API_BASE}/v1/wallets \\
   -H "X-API-Key: $API_KEY"`,
     },
     {
@@ -66,7 +68,7 @@ const endpoints: EndpointDef[] = [
   "on_chain_usdc": 0.00,
   "simulated_usdc": 5.00
 }`,
-        curl: `curl http://localhost:3000/v1/wallets/$WALLET_ID \\
+        curl: `curl ${API_BASE}/v1/wallets/$WALLET_ID \\
   -H "X-API-Key: $API_KEY"`,
     },
     {
@@ -78,11 +80,12 @@ const endpoints: EndpointDef[] = [
         params: [{ name: 'id', type: 'string', required: true, description: 'Wallet ID' }],
         body: [
             { name: 'amount_usd', type: 'number', description: 'Amount in USD (default $0.50, min $0.50)' },
-            { name: 'success_url', type: 'string', description: 'Redirect URL on success' },
-            { name: 'cancel_url', type: 'string', description: 'Redirect URL on cancel' },
+            { name: 'success_url', type: 'string', description: 'Redirect URL on success (pair with cancel_url)' },
+            { name: 'cancel_url', type: 'string', description: 'Redirect URL on cancel (pair with success_url)' },
+            { name: 'redirect_url', type: 'string', description: 'Alternative: single URL; ?status=success or ?status=cancelled appended' },
         ],
         responseExample: `{ "url": "https://checkout.stripe.com/...", "amount_usd": 0.5 }`,
-        curl: `curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/deposit \\
+        curl: `curl -X POST ${API_BASE}/v1/wallets/$WALLET_ID/deposit \\
   -H "X-API-Key: $API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"amount_usd": 0.5}'`,
@@ -106,7 +109,7 @@ const endpoints: EndpointDef[] = [
   "amount_usdc": 2.00,
   "note": "prize winnings"
 }`,
-        curl: `curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/transfer \\
+        curl: `curl -X POST ${API_BASE}/v1/wallets/$WALLET_ID/transfer \\
   -H "X-API-Key: $API_KEY" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: $(uuidgen)" \\
@@ -131,7 +134,7 @@ const endpoints: EndpointDef[] = [
   "confirmation_id": "withdraw_550e8400_1709312345678",
   "settlement_mode": "simulated"
 }`,
-        curl: `curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/withdraw \\
+        curl: `curl -X POST ${API_BASE}/v1/wallets/$WALLET_ID/withdraw \\
   -H "X-API-Key: $API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"amount_usdc": 3.00}'`,
@@ -151,7 +154,7 @@ const endpoints: EndpointDef[] = [
     { "signature": "5xT3...", "blockTime": 1709312345 }
   ]
 }`,
-        curl: `curl "http://localhost:3000/v1/wallets/$WALLET_ID/transactions?limit=10" \\
+        curl: `curl "${API_BASE}/v1/wallets/$WALLET_ID/transactions?limit=10" \\
   -H "X-API-Key: $API_KEY"`,
     },
     {
@@ -162,7 +165,7 @@ const endpoints: EndpointDef[] = [
         auth: true,
         params: [{ name: 'id', type: 'string', required: true, description: 'Wallet ID' }],
         responseExample: `{ "url": "https://connect.stripe.com/..." }`,
-        curl: `curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/connect \\
+        curl: `curl -X POST ${API_BASE}/v1/wallets/$WALLET_ID/connect \\
   -H "X-API-Key: $API_KEY"`,
     },
     {
@@ -184,7 +187,7 @@ const endpoints: EndpointDef[] = [
   "eligible_wallet_ids": ["abc-123", "def-456"],
   "skipped": [{ "wallet_id": "ghi-789", "reason": "non-zero balance" }]
 }`,
-        curl: `curl -X POST http://localhost:3000/v1/wallets/cleanup-inactive \\
+        curl: `curl -X POST ${API_BASE}/v1/wallets/cleanup-inactive \\
   -H "X-API-Key: $API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"dry_run": true, "grace_hours": 168}'`,
@@ -341,7 +344,7 @@ export default function ApiDocs() {
                     />
                 </h1>
                 <p className="docs-subtitle">
-                    All endpoints require <code>X-API-Key</code> header unless noted. Base URL: <code>http://localhost:3000</code>
+                    All endpoints require <code>X-API-Key</code> header unless noted. Base URL: <code>{API_BASE}</code>
                 </p>
             </div>
 
