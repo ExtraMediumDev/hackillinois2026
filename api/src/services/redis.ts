@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { PlayerRecord, IdempotencyRecord, GameRecord } from '../types';
+import { PlayerRecord, IdempotencyRecord } from '../types';
 
 let _client: Redis | null = null;
 
@@ -16,8 +16,6 @@ function getClient(): Redis {
 // ─── Key Helpers ─────────────────────────────────────────────────────────────
 const playerKey = (id: string) => `player:${id}`;
 const playerIndexKey = 'players:index';
-const gameKey = (id: string) => `game:${id}`;
-const gameIndexKey = 'games:index';
 const idempotentKey = (key: string) => `idempotent:${key}`;
 
 // TTLs (seconds)
@@ -44,23 +42,6 @@ export async function getAllPlayerIds(): Promise<string[]> {
 export async function deletePlayer(id: string): Promise<void> {
   await getClient().del(playerKey(id));
   await getClient().srem(playerIndexKey, id);
-}
-
-// ─── Game ─────────────────────────────────────────────────────────────────────
-export async function saveGame(game: GameRecord): Promise<void> {
-  await getClient().set(gameKey(game.game_id), JSON.stringify(game));
-  await getClient().sadd(gameIndexKey, game.game_id);
-}
-
-export async function getGame(id: string): Promise<GameRecord | null> {
-  const raw = await getClient().get<string>(gameKey(id));
-  if (!raw) return null;
-  return typeof raw === 'string' ? JSON.parse(raw) : (raw as GameRecord);
-}
-
-export async function deleteGame(id: string): Promise<void> {
-  await getClient().del(gameKey(id));
-  await getClient().srem(gameIndexKey, id);
 }
 
 // ─── Idempotency ──────────────────────────────────────────────────────────────

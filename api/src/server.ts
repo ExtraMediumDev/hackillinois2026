@@ -7,8 +7,7 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 
 import { authMiddleware } from './middleware/auth';
-import playerRoutes from './routes/players';
-import gameRoutes from './routes/games';
+import walletRoutes from './routes/wallets';
 import webhookRoutes from './routes/webhooks';
 import { SpliceError } from './types';
 
@@ -78,7 +77,7 @@ const start = async () => {
       openapi: '3.0.0',
       info: {
         title: 'Splice API',
-        description: 'Web2-to-Web3 gaming bridge API — HackIllinois 2026',
+        description: 'Wallet and balance management API for web3 applications — HackIllinois 2026',
         version: '1.0.0',
       },
       servers: [
@@ -107,8 +106,7 @@ const start = async () => {
     },
   });
 
-  app.register(playerRoutes, { prefix: '/v1' });
-  app.register(gameRoutes, { prefix: '/v1' });
+  app.register(walletRoutes, { prefix: '/v1' });
   app.register(webhookRoutes, { prefix: '/v1' });
 
   const port = parseInt(process.env.PORT ?? '3000', 10);

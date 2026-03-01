@@ -89,14 +89,11 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
           const session = (event as any).data.object as {
             wallet_addresses?: { solana?: string };
             destination_amount?: string;
-            metadata?: { player_id?: string; game_id?: string };
+            metadata?: { player_id?: string };
           };
 
           const solanaAddress = session.wallet_addresses?.solana;
           app.log.info({ solanaAddress, amount: session.destination_amount }, 'Onramp fulfilled');
-
-          // If metadata contains player_id and game_id, we could auto-join.
-          // For MVP, we log and surface via GET /v1/players/:id balance check.
           break;
         }
 
