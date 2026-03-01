@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Keypair } from '@solana/web3.js';
 import { v4 as uuidv4 } from 'uuid';
-import { EncryptedKeypair, PlayerRecord } from '../types';
+import { EncryptedKeypair, PlayerRecord, WalletLifecycleState } from '../types';
 
 function getEncryptionKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY;
@@ -41,10 +41,48 @@ export function decryptKeypair(payload: EncryptedKeypair): Keypair {
 }
 
 export function createPlayerRecord(keypair: Keypair): PlayerRecord {
+  const now = Date.now();
   return {
     player_id: uuidv4(),
     public_key: keypair.publicKey.toBase58(),
     encrypted_keypair: encryptKeypair(keypair),
-    created_at: Date.now(),
+    wallet_state: 'active',
+    last_active_at: now,
+    created_at: now,
   };
+}
+
+/**
+ * Backward-compatible lifecycle defaults for existing players in Redis.
+ */
+export function ensurePlayerLifecycleFields(player: PlayerRecord): PlayerRecord {
+  const normalized: PlayerRecord = { ...player };
+  const now = Date.now();
+
+  if (!normalized.wallet_state) {
+    normalized.wallet_state = 'active';
+  }
+  if (!normalized.last_active_at) {
+    normalized.last_active_at = normalized.created_at ?? now;
+  }
+
+  return normalized;
+}
+
+export function markPlayerActive(player: PlayerRecord): PlayerRecord {
+  const next = ensurePlayerLifecycleFields(player);
+  next.wallet_state = 'active';
+  next.last_active_at = Date.now();
+  delete next.inactive_since;
+  delete next.closed_at;
+  return next;
+}
+
+export function markPlayerInactive(player: PlayerRecord): PlayerRecord {
+  const next = ensurePlayerLifecycleFields(player);
+  if (!next.inactive_since) {
+    next.inactive_since = Date.now();
+  }
+  next.wallet_state = 'inactive';
+  return next;
 }

@@ -1,11 +1,28 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { generateKeypair, createPlayerRecord } from '../services/wallet';
-import { savePlayer, getPlayer } from '../services/redis';
-import { createOnrampSession, createCheckoutSession, createConnectAccount, createConnectOnboardingLink, initiateInstantPayout } from '../services/stripe';
+import { generateKeypair, createPlayerRecord, ensurePlayerLifecycleFields, markPlayerActive, markPlayerInactive } from '../services/wallet';
+import { savePlayer, getPlayer, getAllPlayerIds, deletePlayer } from '../services/redis';
+import { createOnrampSession, createCheckoutSession, createConnectAccount, createConnectOnboardingLink, createTransferToConnectedAccount, initiateInstantPayout } from '../services/stripe';
 import { getSolBalance, getTokenBalance, getTransactionHistory, transferUsdcFromPlayer } from '../services/solana';
 import { decryptKeypair } from '../services/wallet';
 
 export default async function playerRoutes(app: FastifyInstance): Promise<void> {
+  const GRACE_HOURS_DEFAULT = parseInt(process.env.PLAYER_INACTIVE_GRACE_HOURS ?? '168', 10);
+  const ZERO_USDC_EPSILON = 0.000001;
+  const ZERO_SOL_EPSILON = 0.00001;
+  const DEMO_PAYOUT_DESTINATION = process.env.DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID;
+  const DEMO_PAYOUT_MODE = process.env.DEMO_PAYOUT_MODE === 'true' || Boolean(DEMO_PAYOUT_DESTINATION);
+
+  const normalizeAndPersistIfNeeded = async (player: ReturnType<typeof ensurePlayerLifecycleFields>): Promise<typeof player> => {
+    const normalized = ensurePlayerLifecycleFields(player);
+    if (
+      normalized.wallet_state !== player.wallet_state
+      || normalized.last_active_at !== player.last_active_at
+    ) {
+      await savePlayer(normalized);
+    }
+    return normalized;
+  };
+
   /**
    * POST /v1/players
    * Creates a new burner wallet and returns a Stripe Onramp link.
@@ -87,8 +104,8 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       }>,
       reply: FastifyReply
     ) => {
-      const player = await getPlayer(request.params.id);
-      if (!player) {
+      const existingPlayer = await getPlayer(request.params.id);
+      if (!existingPlayer) {
         return reply.code(404).send({
           status: 'error',
           statusCode: 404,
@@ -99,6 +116,7 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
           },
         });
       }
+      const player = await normalizeAndPersistIfNeeded(existingPlayer);
       const successUrl = request.body?.success_url ?? 'http://localhost:3000/success';
       const cancelUrl = request.body?.cancel_url ?? 'http://localhost:3000/cancel';
       const amountUsd = request.body?.amount_usd ?? 0.5;
@@ -121,6 +139,7 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
           successUrl,
           cancelUrl,
         });
+        await savePlayer(markPlayerActive(player));
         return reply.send({ url, amount_usd: amountUsd });
       } catch (err) {
         app.log.error({ err }, 'Checkout session create failed');
@@ -170,8 +189,8 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply
     ) => {
-      const player = await getPlayer(request.params.id);
-      if (!player) {
+      const existingPlayer = await getPlayer(request.params.id);
+      if (!existingPlayer) {
         return reply.code(404).send({
           status: 'error',
           statusCode: 404,
@@ -183,6 +202,7 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         });
       }
 
+      const player = await normalizeAndPersistIfNeeded(existingPlayer);
       const usdcMint = process.env.USDC_MINT!;
       const [solBalance, usdcBalance] = await Promise.all([
         getSolBalance(player.public_key),
@@ -237,8 +257,8 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       request: FastifyRequest<{ Params: { id: string }; Querystring: { limit?: string } }>,
       reply: FastifyReply
     ) => {
-      const player = await getPlayer(request.params.id);
-      if (!player) {
+      const existingPlayer = await getPlayer(request.params.id);
+      if (!existingPlayer) {
         return reply.code(404).send({
           status: 'error',
           statusCode: 404,
@@ -250,6 +270,8 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         });
       }
 
+      const player = await normalizeAndPersistIfNeeded(existingPlayer);
+      await savePlayer(markPlayerActive(player));
       const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
       const transactions = await getTransactionHistory(player.public_key, limit);
 
@@ -288,17 +310,18 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       },
     },
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const player = await getPlayer(request.params.id);
-      if (!player) {
+      const existingPlayer = await getPlayer(request.params.id);
+      if (!existingPlayer) {
         return reply.code(404).send({ status: 'error', statusCode: 404, error: { code: 'Not Found', message: 'Player not found', remediation: '' } });
       }
+      const player = await normalizeAndPersistIfNeeded(existingPlayer);
 
       let accountId = player.stripe_connect_account_id;
       if (!accountId) {
         accountId = await createConnectAccount();
         player.stripe_connect_account_id = accountId;
-        await savePlayer(player);
       }
+      await savePlayer(markPlayerActive(player));
 
       // Generate the secure URL where the user inputs their bank details
       const url = await createConnectOnboardingLink(
@@ -350,12 +373,25 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       request: FastifyRequest<{ Params: { id: string }; Body: { amount_usdc?: number } }>,
       reply: FastifyReply
     ) => {
-      const player = await getPlayer(request.params.id);
-      if (!player) {
+      const existingPlayer = await getPlayer(request.params.id);
+      if (!existingPlayer) {
         return reply.code(404).send({ status: 'error', statusCode: 404, error: { code: 'PLAYER_NOT_FOUND', message: 'Player not found.', remediation: '' } });
       }
+      const player = await normalizeAndPersistIfNeeded(existingPlayer);
 
-      if (!player.stripe_connect_account_id) {
+      if (DEMO_PAYOUT_MODE && !DEMO_PAYOUT_DESTINATION) {
+        return reply.code(500).send({
+          status: 'error',
+          statusCode: 500,
+          error: {
+            code: 'DEMO_PAYOUT_CONFIG_MISSING',
+            message: 'Demo payout mode is enabled but DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID is missing.',
+            remediation: 'Set a preconfigured Stripe connected account ID in env.',
+          },
+        });
+      }
+
+      if (!DEMO_PAYOUT_MODE && !player.stripe_connect_account_id) {
         return reply.code(400).send({
           status: 'error',
           statusCode: 400,
@@ -380,6 +416,10 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INSUFFICIENT', message: 'Not enough balance.', remediation: '' } });
       }
 
+      player.pending_payout = true;
+      player.pending_onchain_settlement = true;
+      await savePlayer(markPlayerActive(player));
+
       const keypair = decryptKeypair(player.encrypted_keypair);
 
       // Step 1: Transfer USDC from Burner Wallet -> API Master Treasury
@@ -402,20 +442,41 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
           amountToTransfer
         );
       } catch (err) {
+        player.pending_onchain_settlement = false;
+        player.pending_payout = false;
+        await savePlayer(player);
         app.log.error({ err, playerId: player.player_id }, 'Web3 Cashout Failed');
         return reply.code(500).send({ status: 'error', statusCode: 500, error: { code: 'CASHOUT_FAILED_WEB3', message: 'Failed to move funds on-chain.', remediation: '' } });
       }
+      player.pending_onchain_settlement = false;
 
       // Step 2: Trigger Stripe Instant Payout from Platform -> User Connected Bank
-      // Warning: In dev mode, Stripe may throw if the Connect account isn't fully verified.
-      let stripePayoutId = "simulated_payout_dev";
+      // In demo mode, transfer to one preconfigured connected account for frictionless judging.
+      let stripePayoutId = DEMO_PAYOUT_MODE ? 'simulated_payout_demo' : 'simulated_payout_dev';
       try {
         const amountCents = Math.round(amountToTransfer * 100);
-        const payout = await initiateInstantPayout(player.stripe_connect_account_id, amountCents);
-        stripePayoutId = payout.id;
+        if (DEMO_PAYOUT_MODE) {
+          const transfer = await createTransferToConnectedAccount(DEMO_PAYOUT_DESTINATION!, amountCents);
+          stripePayoutId = transfer.id;
+        } else {
+          const payout = await initiateInstantPayout(player.stripe_connect_account_id!, amountCents);
+          stripePayoutId = payout.id;
+        }
       } catch (err) {
-        app.log.error({ err, playerId: player.player_id }, 'Stripe Connect Payout Failed');
-        // If Stripe fails, the platform now holds the user's USDC. In a prod app, we'd refund or queue retry.
+        app.log.error({ err, playerId: player.player_id, demoPayout: DEMO_PAYOUT_MODE }, 'Stripe payout step failed');
+        // If Stripe fails, the platform now holds the user's USDC. In production we'd refund or queue retry.
+      }
+      player.pending_payout = false;
+
+      // Move to inactive state only after explicit safety checks.
+      const [postUsdc, postSol] = await Promise.all([
+        getTokenBalance(player.public_key, usdcMint),
+        getSolBalance(player.public_key),
+      ]);
+      if (postUsdc <= ZERO_USDC_EPSILON && postSol <= ZERO_SOL_EPSILON) {
+        await savePlayer(markPlayerInactive(player));
+      } else {
+        await savePlayer(markPlayerActive(player));
       }
 
       return reply.send({
@@ -423,6 +484,75 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         solana_signature: solanaSignature,
         stripe_payout_id: stripePayoutId,
         amount_transferred: amountToTransfer
+      });
+    }
+  );
+
+  /**
+   * POST /v1/players/cleanup-inactive
+   * Removes inactive players after a grace period and only if balances are effectively zero.
+   */
+  app.post<{ Body: { dry_run?: boolean; grace_hours?: number } }>(
+    '/players/cleanup-inactive',
+    async (
+      request: FastifyRequest<{ Body: { dry_run?: boolean; grace_hours?: number } }>,
+      reply: FastifyReply
+    ) => {
+      const now = Date.now();
+      const graceHours = request.body?.grace_hours ?? GRACE_HOURS_DEFAULT;
+      const dryRun = request.body?.dry_run ?? true;
+      const graceMs = Math.max(1, graceHours) * 60 * 60 * 1000;
+
+      const playerIds = await getAllPlayerIds();
+      const eligibleForDeletion: string[] = [];
+      const skipped: Array<{ player_id: string; reason: string }> = [];
+
+      for (const playerId of playerIds) {
+        const raw = await getPlayer(playerId);
+        if (!raw) continue;
+        const player = ensurePlayerLifecycleFields(raw);
+        if (player.wallet_state !== 'inactive') {
+          continue;
+        }
+        if (!player.inactive_since) {
+          skipped.push({ player_id: playerId, reason: 'inactive_since missing' });
+          continue;
+        }
+        if (now - player.inactive_since < graceMs) {
+          skipped.push({ player_id: playerId, reason: 'within grace period' });
+          continue;
+        }
+        if (player.pending_payout || player.pending_onchain_settlement) {
+          skipped.push({ player_id: playerId, reason: 'pending operations' });
+          continue;
+        }
+
+        const [usdcBalance, solBalance] = await Promise.all([
+          getTokenBalance(player.public_key, process.env.USDC_MINT!),
+          getSolBalance(player.public_key),
+        ]);
+        if (usdcBalance > ZERO_USDC_EPSILON || solBalance > ZERO_SOL_EPSILON) {
+          skipped.push({ player_id: playerId, reason: 'non-zero balance' });
+          continue;
+        }
+
+        eligibleForDeletion.push(playerId);
+      }
+
+      if (!dryRun) {
+        for (const playerId of eligibleForDeletion) {
+          await deletePlayer(playerId);
+        }
+      }
+
+      return reply.send({
+        dry_run: dryRun,
+        grace_hours: graceHours,
+        scanned: playerIds.length,
+        eligible_count: eligibleForDeletion.length,
+        deleted_count: dryRun ? 0 : eligibleForDeletion.length,
+        eligible_player_ids: eligibleForDeletion,
+        skipped,
       });
     }
   );

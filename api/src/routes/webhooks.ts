@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { constructWebhookEvent } from '../services/stripe';
 import { getPlayer, savePlayer } from '../services/redis';
 import { transferUsdcToPlayer } from '../services/solana';
+import { ensurePlayerLifecycleFields, markPlayerActive } from '../services/wallet';
 
 export default async function webhookRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -63,14 +64,16 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
             app.log.warn({ playerId, payment_status: session.payment_status }, 'Checkout not paid');
             break;
           }
-          const player = await getPlayer(playerId);
-          if (!player) {
+          const rawPlayer = await getPlayer(playerId);
+          if (!rawPlayer) {
             app.log.warn({ playerId }, 'Player not found for checkout credit');
             break;
           }
+          const player = ensurePlayerLifecycleFields(rawPlayer);
           const amountUsd = (session.amount_total ?? 50) / 100;
           try {
             const sig = await transferUsdcToPlayer(player.public_key, amountUsd);
+            await savePlayer(markPlayerActive(player));
             app.log.info({ playerId, amountUsd, signature: sig }, 'Credited devnet USDC after checkout');
           } catch (err) {
             app.log.error({ err, playerId, amountUsd }, 'Failed to credit USDC after checkout');

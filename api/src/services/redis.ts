@@ -15,21 +15,33 @@ function getClient(): Redis {
 
 // ─── Key Helpers ─────────────────────────────────────────────────────────────
 const playerKey = (id: string) => `player:${id}`;
+const playerIndexKey = 'players:index';
 const idempotentKey = (key: string) => `idempotent:${key}`;
 
 // TTLs (seconds)
-const PLAYER_TTL = 60 * 60 * 24;       // 24 hours
 const IDEMPOTENT_TTL = 60 * 60 * 24;   // 24 hours
 
 // ─── Player ──────────────────────────────────────────────────────────────────
 export async function savePlayer(player: PlayerRecord): Promise<void> {
-  await getClient().set(playerKey(player.player_id), JSON.stringify(player), { ex: PLAYER_TTL });
+  await getClient().set(playerKey(player.player_id), JSON.stringify(player));
+  await getClient().sadd(playerIndexKey, player.player_id);
 }
 
 export async function getPlayer(id: string): Promise<PlayerRecord | null> {
   const raw = await getClient().get<string>(playerKey(id));
   if (!raw) return null;
+  await getClient().sadd(playerIndexKey, id);
   return typeof raw === 'string' ? JSON.parse(raw) : (raw as PlayerRecord);
+}
+
+export async function getAllPlayerIds(): Promise<string[]> {
+  const ids = await getClient().smembers<string[]>(playerIndexKey);
+  return ids ?? [];
+}
+
+export async function deletePlayer(id: string): Promise<void> {
+  await getClient().del(playerKey(id));
+  await getClient().srem(playerIndexKey, id);
 }
 
 // ─── Idempotency ──────────────────────────────────────────────────────────────
