@@ -381,9 +381,6 @@ export default function Demo() {
                 <div className="demo-game-cta">
                     <div className="demo-game-cta-inner">
                         <h3 className="demo-game-cta-title">See Splice in Action</h3>
-                        <p className="demo-game-cta-desc">
-                            Experience the full payment flow inside a live multiplayer game built on our API.
-                        </p>
                         <a
                             href="https://penguin-knockout.vercel.app"
                             target="_blank"
