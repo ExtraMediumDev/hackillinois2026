@@ -21,6 +21,10 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
     '/webhooks/stripe',
     {
       config: { rawBody: true },
+      schema: {
+        description: 'Stripe webhook endpoint.',
+        tags: ['Default'],
+      },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const sig = request.headers['stripe-signature'];

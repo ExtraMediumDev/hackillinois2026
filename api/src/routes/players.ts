@@ -520,6 +520,20 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
    */
   app.post<{ Body: { dry_run?: boolean; grace_hours?: number } }>(
     '/players/cleanup-inactive',
+    {
+      schema: {
+        description: 'Deletes inactive players after grace period if balances are effectively zero.',
+        tags: ['Players'],
+        security: [{ apiKey: [] }],
+        body: {
+          type: 'object',
+          properties: {
+            dry_run: { type: 'boolean' },
+            grace_hours: { type: 'number' },
+          },
+        },
+      },
+    },
     async (
       request: FastifyRequest<{ Body: { dry_run?: boolean; grace_hours?: number } }>,
       reply: FastifyReply

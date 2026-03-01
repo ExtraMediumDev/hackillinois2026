@@ -38,7 +38,26 @@ app.setErrorHandler((error: FastifyError, _request: FastifyRequest, reply: Fasti
 });
 
 // Health check (no auth required — registered before auth hook)
-app.get('/health', { preHandler: [] }, async () => ({ status: 'ok', version: '1.0.0' }));
+app.get(
+  '/health',
+  {
+    preHandler: [],
+    schema: {
+      description: 'Health check endpoint.',
+      tags: ['Default'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            version: { type: 'string' },
+          },
+        },
+      },
+    },
+  },
+  async () => ({ status: 'ok', version: '1.0.0' }),
+);
 
 const start = async () => {
   await app.register(sensible);

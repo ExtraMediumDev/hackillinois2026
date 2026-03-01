@@ -4,29 +4,34 @@ import { FiArrowLeft } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import DecryptedText from './DecryptedText';
 
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
+const API_DOCS_URL = import.meta.env.VITE_API_DOCS_URL ?? `${API_BASE.replace(/\/$/, '')}/docs/json`;
+
 export default function ApiDocs() {
     return (
         <div className="api-docs-container">
-            <div className="docs-header" style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
-                <Link to="/" className="primary-btn" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}>
-                    <FiArrowLeft style={{ marginRight: '0.5rem' }} />
-                    Back to Home
-                </Link>
+            <div className="docs-header">
+                <div className="docs-top-bar">
+                    <Link to="/" className="primary-btn docs-back-btn">
+                        <FiArrowLeft style={{ marginRight: '0.5rem' }} />
+                        Back to Home
+                    </Link>
+                </div>
 
-                <h1 style={{ margin: 0 }}>
+                <h1 className="docs-title">
                     <DecryptedText
-                        text="Splice API"
+                        text="Splice API Documentation"
                         animateOn="view"
                         sequential
                         speed={70}
-                        className="headline"
-                        encryptedClassName="headline encrypted"
+                        className="headline docs-headline"
+                        encryptedClassName="headline encrypted docs-headline"
                     />
                 </h1>
             </div>
 
             <div className="swagger-wrapper">
-                <SwaggerUI url="http://localhost:3000/docs/json" />
+                <SwaggerUI url={API_DOCS_URL} />
             </div>
         </div>
     );

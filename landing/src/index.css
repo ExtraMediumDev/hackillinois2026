@@ -185,6 +185,31 @@ h1 {
   z-index: 10;
 }
 
+.docs-header {
+  margin-bottom: 2rem;
+}
+
+.docs-top-bar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 1rem;
+}
+
+.docs-back-btn {
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+}
+
+.docs-title {
+  margin: 0;
+  text-align: center;
+}
+
+.docs-headline {
+  font-size: clamp(1.9rem, 6vw, 3.1rem);
+  white-space: normal;
+}
+
 .swagger-wrapper {
   background: #fff;
   /* Keep base white so invert works perfectly */

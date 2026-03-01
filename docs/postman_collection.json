@@ -1,13 +1,14 @@
 {
   "info": {
-    "name": "Splice API — Floor is Lava",
-    "description": "Full lifecycle collection for the Splice API HackIllinois 2026 demo.",
+    "name": "Splice API",
+    "description": "Up-to-date lifecycle collection for the Splice API HackIllinois 2026 demo.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000" },
     { "key": "api_key", "value": "your-api-key-here" },
     { "key": "player_id", "value": "" },
+    { "key": "player_public_key", "value": "" },
     { "key": "game_id", "value": "" }
   ],
   "item": [
@@ -27,8 +28,9 @@
             "exec": [
               "const res = pm.response.json();",
               "pm.collectionVariables.set('player_id', res.player_id);",
+              "pm.collectionVariables.set('player_public_key', res.public_key);",
               "console.log('player_id:', res.player_id);",
-              "console.log('onramp_url:', res.stripe_onramp_session_url);"
+              "console.log('player_public_key:', res.public_key);"
             ]
           }
         }
@@ -40,6 +42,36 @@
           { "key": "Content-Type", "value": "application/json" }
         ],
         "url": "{{base_url}}/v1/players"
+      }
+    },
+    {
+      "name": "1b. Create Checkout Session",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"success_url\": \"http://localhost:5173/demo/stripe-success\",\n  \"cancel_url\": \"http://localhost:5173/demo/stripe-cancel\",\n  \"amount_usd\": 0.5\n}"
+        },
+        "url": "{{base_url}}/v1/players/{{player_id}}/checkout-session"
+      }
+    },
+    {
+      "name": "1c. Simulate Stripe Checkout Webhook (local)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "stripe-signature", "value": "test-signature" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"metadata\": { \"player_id\": \"{{player_id}}\" },\n      \"client_reference_id\": \"{{player_id}}\",\n      \"amount_total\": 50,\n      \"payment_status\": \"paid\"\n    }\n  }\n}"
+        },
+        "url": "{{base_url}}/v1/webhooks/stripe"
       }
     },
     {
@@ -59,6 +91,47 @@
           "raw": "{{base_url}}/v1/players/{{player_id}}/transactions?limit=10",
           "query": [{ "key": "limit", "value": "10" }]
         }
+      }
+    },
+    {
+      "name": "2c. Create/Reuse Connect Account",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/v1/players/{{player_id}}/connect"
+      }
+    },
+    {
+      "name": "2d. Cash Out Player",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount_usdc\": 0.5\n}"
+        },
+        "url": "{{base_url}}/v1/players/{{player_id}}/cashout"
+      }
+    },
+    {
+      "name": "2e. Cleanup Inactive Players (dry run)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dry_run\": true,\n  \"grace_hours\": 168\n}"
+        },
+        "url": "{{base_url}}/v1/players/cleanup-inactive"
       }
     },
     {

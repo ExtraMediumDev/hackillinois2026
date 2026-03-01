@@ -127,7 +127,7 @@ cd api && npm run dev
 
 ## API Endpoints
 
-All endpoints require `X-API-Key: <your-key>` header except `/health` and `/v1/webhooks/*`.
+All endpoints require `X-API-Key: <your-key>` header except `/health`, `/v1/webhooks/*`, and `/docs*`.
 
 ### Players
 
@@ -141,8 +141,7 @@ curl -X POST http://localhost:3000/v1/players \
 ```json
 {
   "player_id": "550e8400-e29b-41d4-a716-446655440000",
-  "public_key": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
-  "stripe_onramp_session_url": "https://crypto.link.com/..."
+  "public_key": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
 }
 ```
 
@@ -176,6 +175,35 @@ curl http://localhost:3000/v1/players/$PLAYER_ID \
 curl "http://localhost:3000/v1/players/$PLAYER_ID/transactions?limit=10" \
   -H "X-API-Key: $API_KEY"
 ```
+
+#### `POST /v1/players/:id/connect` — Start Stripe Connect onboarding
+Creates or reuses a connected account and returns an onboarding link.
+```bash
+curl -X POST http://localhost:3000/v1/players/$PLAYER_ID/connect \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json"
+```
+**Response:** `{ "url": "https://connect.stripe.com/..." }`
+
+#### `POST /v1/players/:id/cashout` — Cash out player USDC
+Transfers USDC from burner wallet to treasury and then settles fiat payout.
+```bash
+curl -X POST http://localhost:3000/v1/players/$PLAYER_ID/cashout \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_usdc": 0.5}'
+```
+If `amount_usdc` is omitted, the API attempts to cash out the player's full USDC balance.
+
+#### `POST /v1/players/cleanup-inactive` — Cleanup inactive players
+Scans inactive players and removes those past grace period with effectively zero balances.
+```bash
+curl -X POST http://localhost:3000/v1/players/cleanup-inactive \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true, "grace_hours": 168}'
+```
+Set `dry_run` to `false` to actually delete eligible records.
 
 ### Games
 
@@ -245,8 +273,8 @@ Configured in Stripe Dashboard → Webhooks. No `X-API-Key` required (uses Strip
 
 Events handled:
 - `checkout.session.completed` — After Stripe Checkout payment, credits devnet USDC to the player's burner wallet (demo flow)
-- `crypto_onramp_session.fulfillment.succeeded` — USDC funded to burner wallet (when Onramp approved)
-- `account.updated` — Connect account status update
+- `crypto_onramp_session.fulfillment.succeeded` — currently logs fulfillment metadata (no automatic credit/join side-effects yet)
+- `account.updated` — currently logs connected account status updates
 
 ---
 
@@ -287,7 +315,7 @@ All errors follow a consistent structure:
 
 ## Stripe Test Cards
 
-Use these in the Crypto Onramp sandbox:
+Use these in Stripe test mode (Checkout):
 
 | Card | Number | Use |
 |---|---|---|
