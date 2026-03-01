@@ -106,11 +106,13 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
       ]);
       const simulatedBalance = player.simulated_usdc_balance ?? 0;
 
+      const totalBalance = Math.max(0, usdcBalance + simulatedBalance);
+
       return reply.send({
         wallet_id: player.player_id,
         public_key: player.public_key,
         sol_balance: solBalance,
-        usdc_balance: usdcBalance + simulatedBalance,
+        usdc_balance: totalBalance,
         on_chain_usdc: usdcBalance,
         simulated_usdc: simulatedBalance,
       });
@@ -240,32 +242,38 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
         ));
       }
       const player = await normalizeAndPersistIfNeeded(existing);
-      const simulatedBal = player.simulated_usdc_balance ?? 0;
+      const usdcMint = process.env.USDC_MINT!;
+      const onChain = await getTokenBalance(player.public_key, usdcMint);
+      const simulated = player.simulated_usdc_balance ?? 0;
+      const totalBalance = onChain + simulated;
+
       const requestedAmount = request.body?.amount_usdc;
-      const amount = requestedAmount !== undefined ? requestedAmount : simulatedBal;
+      const amount = requestedAmount !== undefined ? requestedAmount : totalBalance;
 
       if (amount <= 0) {
         return reply.code(400).send(spliceError(
           'INVALID_AMOUNT', 400, 'Nothing to withdraw.', 'Balance must be positive.',
         ));
       }
-      if (amount > simulatedBal) {
+      if (amount > totalBalance + 0.001) {
         return reply.code(400).send(spliceError(
           'INSUFFICIENT_BALANCE', 400,
-          `Requested ${amount} but balance is ${simulatedBal.toFixed(2)}.`,
+          `Requested ${amount} but balance is ${totalBalance.toFixed(2)}.`,
           'Request a smaller amount or omit amount_usdc to withdraw the full balance.',
         ));
       }
 
-      player.simulated_usdc_balance = simulatedBal - amount;
+      player.simulated_usdc_balance = simulated - amount;
       await savePlayer(player);
+
+      const remainingBalance = Math.max(0, onChain + player.simulated_usdc_balance);
 
       return reply.send({
         status: 'settled',
         wallet_id: player.player_id,
         public_key: player.public_key,
         amount_usdc: amount,
-        remaining_balance: player.simulated_usdc_balance,
+        remaining_balance: remainingBalance,
         confirmation_id: `withdraw_${player.player_id.slice(0, 8)}_${Date.now()}`,
         settlement_mode: 'simulated',
       });
@@ -320,17 +328,28 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
         ));
       }
       const player = await normalizeAndPersistIfNeeded(existing);
+      const usdcMint = process.env.USDC_MINT!;
+      const onChain = await getTokenBalance(player.public_key, usdcMint);
+      const simulated = player.simulated_usdc_balance ?? 0;
+      const totalBefore = onChain + simulated;
 
-      const before = player.simulated_usdc_balance ?? 0;
-      let after = before + amount;
-      if (after < 0) after = 0;
-      player.simulated_usdc_balance = after;
+      if (amount < 0 && Math.abs(amount) > totalBefore + 0.001) {
+        return reply.code(400).send(spliceError(
+          'INSUFFICIENT_BALANCE', 400,
+          `Debit of ${Math.abs(amount)} exceeds balance of ${totalBefore.toFixed(2)}.`,
+          'Reduce the amount or credit the wallet first.',
+        ));
+      }
+
+      player.simulated_usdc_balance = simulated + amount;
       await savePlayer(player);
+
+      const totalAfter = Math.max(0, onChain + player.simulated_usdc_balance);
 
       return reply.send({
         wallet_id: player.player_id,
-        before_balance: before,
-        after_balance: after,
+        before_balance: totalBefore,
+        after_balance: totalAfter,
         amount_usdc: amount,
         note: note ?? null,
       });
