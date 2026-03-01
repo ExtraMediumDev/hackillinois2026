@@ -6,30 +6,32 @@ import { Link } from 'react-router-dom';
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
 const API_KEY = import.meta.env.VITE_API_KEY ?? '';
 
-interface PlayerData {
-    player_id: string;
+interface WalletData {
+    wallet_id: string;
     public_key: string;
     sol_balance?: number;
     usdc_balance?: number;
+    on_chain_usdc?: number;
+    simulated_usdc?: number;
 }
 
-interface CashoutResult {
+interface WithdrawResult {
     status?: string;
-    stripe_payout_id?: string;
-    amount_transferred?: number;
+    wallet_id?: string;
+    amount_usdc?: number;
+    remaining_balance?: number;
+    confirmation_id?: string;
     settlement_mode?: string;
-    fiat_payout_status?: string;
-    payout_destination_connect_account_id?: string;
 }
 
-const PLAYER_STORAGE_KEY = 'splice_demo_player_id';
+const WALLET_STORAGE_KEY = 'splice_demo_wallet_id';
 
 export default function Demo() {
-    const [player, setPlayer] = useState<PlayerData | null>(null);
+    const [wallet, setWallet] = useState<WalletData | null>(null);
     const [loading, setLoading] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
-    const [cashoutResult, setCashoutResult] = useState<CashoutResult | null>(null);
+    const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
     const depositWatchTimerRef = useRef<number | null>(null);
 
     const authHeaders: Record<string, string> = {
@@ -47,15 +49,17 @@ export default function Demo() {
         return false;
     }, []);
 
-    const fetchPlayerById = useCallback(async (playerId: string): Promise<PlayerData | null> => {
-        const res = await fetch(`${API_BASE}/v1/players/${playerId}`, { headers: authHeaders });
+    const fetchWalletById = useCallback(async (walletId: string): Promise<WalletData | null> => {
+        const res = await fetch(`${API_BASE}/v1/wallets/${walletId}`, { headers: authHeaders });
         if (!res.ok) return null;
         const data = await res.json();
         return {
-            player_id: data.player_id,
+            wallet_id: data.wallet_id,
             public_key: data.public_key,
             sol_balance: data.sol_balance,
             usdc_balance: data.usdc_balance,
+            on_chain_usdc: data.on_chain_usdc,
+            simulated_usdc: data.simulated_usdc,
         };
     }, []);
 
@@ -66,7 +70,7 @@ export default function Demo() {
         }
     }, []);
 
-    const startDepositWatch = useCallback((playerId: string, baselineUsdc: number) => {
+    const startDepositWatch = useCallback((walletId: string, baselineUsdc: number) => {
         stopDepositWatch();
         const deadline = Date.now() + 2 * 60 * 1000;
         let inFlight = false;
@@ -74,9 +78,9 @@ export default function Demo() {
             if (inFlight) return;
             inFlight = true;
             try {
-                const latest = await fetchPlayerById(playerId);
+                const latest = await fetchWalletById(walletId);
                 if (!latest) return;
-                setPlayer(prev => prev?.player_id === playerId ? { ...prev, ...latest } : prev);
+                setWallet(prev => prev?.wallet_id === walletId ? { ...prev, ...latest } : prev);
                 const currentUsdc = latest.usdc_balance ?? 0;
                 if (currentUsdc > baselineUsdc + 0.000001 || Date.now() > deadline) {
                     stopDepositWatch();
@@ -85,26 +89,26 @@ export default function Demo() {
                 inFlight = false;
             }
         }, 3000);
-    }, [fetchPlayerById, stopDepositWatch]);
+    }, [fetchWalletById, stopDepositWatch]);
 
     useEffect(() => {
         if (!API_KEY) return;
-        const savedPlayerId = window.localStorage.getItem(PLAYER_STORAGE_KEY);
-        if (!savedPlayerId) return;
+        const savedWalletId = window.localStorage.getItem(WALLET_STORAGE_KEY);
+        if (!savedWalletId) return;
 
         void (async () => {
             try {
-                const restored = await fetchPlayerById(savedPlayerId);
+                const restored = await fetchWalletById(savedWalletId);
                 if (!restored) {
-                    window.localStorage.removeItem(PLAYER_STORAGE_KEY);
+                    window.localStorage.removeItem(WALLET_STORAGE_KEY);
                     return;
                 }
-                setPlayer(restored);
+                setWallet(restored);
             } catch {
-                // Ignore silent restore failures; user can always create a new player.
+                // Ignore silent restore failures; user can always create a new wallet.
             }
         })();
-    }, [fetchPlayerById]);
+    }, [fetchWalletById]);
 
     useEffect(() => {
         return () => {
@@ -112,23 +116,23 @@ export default function Demo() {
         };
     }, [stopDepositWatch]);
 
-    const createPlayer = useCallback(async () => {
+    const createWallet = useCallback(async () => {
         if (!ensureApiKey()) return;
         setLoading('create');
         setError(null);
-        setCashoutResult(null);
+        setWithdrawResult(null);
         try {
-            const res = await fetch(`${API_BASE}/v1/players`, {
+            const res = await fetch(`${API_BASE}/v1/wallets`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: '{}',
             });
-            if (!res.ok) throw new Error(`Failed to create player (${res.status})`);
+            if (!res.ok) throw new Error(`Failed to create wallet (${res.status})`);
             const data = await res.json();
-            setPlayer({ player_id: data.player_id, public_key: data.public_key });
-            window.localStorage.setItem(PLAYER_STORAGE_KEY, data.player_id);
+            setWallet({ wallet_id: data.wallet_id, public_key: data.public_key });
+            window.localStorage.setItem(WALLET_STORAGE_KEY, data.wallet_id);
         } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : 'Failed to create player');
+            setError(e instanceof Error ? e.message : 'Failed to create wallet');
         } finally {
             setLoading(null);
         }
@@ -136,30 +140,30 @@ export default function Demo() {
 
     const refreshBalance = useCallback(async () => {
         if (!ensureApiKey()) return;
-        if (!player) return;
+        if (!wallet) return;
         setLoading('refresh');
         setError(null);
         try {
-            const latest = await fetchPlayerById(player.player_id);
+            const latest = await fetchWalletById(wallet.wallet_id);
             if (!latest) throw new Error('Failed to fetch updated balance');
-            setPlayer(prev => prev ? { ...prev, ...latest } : null);
+            setWallet(prev => prev ? { ...prev, ...latest } : null);
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Failed to refresh balance');
         } finally {
             setLoading(null);
         }
-    }, [player, ensureApiKey, fetchPlayerById]);
+    }, [wallet, ensureApiKey, fetchWalletById]);
 
     const fundWallet = useCallback(async () => {
         if (!ensureApiKey()) return;
-        if (!player) return;
+        if (!wallet) return;
         stopDepositWatch();
         setLoading('fund');
         setError(null);
         try {
             const successUrl = `${window.location.origin}/demo/stripe-success`;
             const cancelUrl = `${window.location.origin}/demo/stripe-cancel`;
-            const res = await fetch(`${API_BASE}/v1/players/${player.player_id}/checkout-session`, {
+            const res = await fetch(`${API_BASE}/v1/wallets/${wallet.wallet_id}/deposit`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: JSON.stringify({
@@ -168,51 +172,51 @@ export default function Demo() {
                     amount_usd: 0.50,
                 }),
             });
-            if (!res.ok) throw new Error(`Failed to create checkout session (${res.status})`);
+            if (!res.ok) throw new Error(`Failed to create deposit session (${res.status})`);
             const data = await res.json();
             if (data.url) {
                 window.open(data.url, '_blank');
-                startDepositWatch(player.player_id, player.usdc_balance ?? 0);
+                startDepositWatch(wallet.wallet_id, wallet.usdc_balance ?? 0);
             }
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Failed to start funding');
         } finally {
             setLoading(null);
         }
-    }, [player, ensureApiKey, startDepositWatch, stopDepositWatch]);
+    }, [wallet, ensureApiKey, startDepositWatch, stopDepositWatch]);
 
-    const cashOut = useCallback(async () => {
+    const withdraw = useCallback(async () => {
         if (!ensureApiKey()) return;
-        if (!player) return;
+        if (!wallet) return;
         setLoading('cashout');
         setError(null);
-        setCashoutResult(null);
+        setWithdrawResult(null);
         try {
-            const res = await fetch(`${API_BASE}/v1/players/${player.player_id}/cashout`, {
+            const res = await fetch(`${API_BASE}/v1/wallets/${wallet.wallet_id}/withdraw`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: '{}',
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
-                throw new Error(body?.error?.message || `Cash out failed (${res.status})`);
+                throw new Error(body?.error?.message || `Withdraw failed (${res.status})`);
             }
             const body = await res.json().catch(() => ({}));
-            setCashoutResult(body);
+            setWithdrawResult(body);
             await refreshBalance();
         } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : 'Cash out failed');
+            setError(e instanceof Error ? e.message : 'Withdraw failed');
         } finally {
             setLoading(null);
         }
-    }, [player, refreshBalance, ensureApiKey]);
+    }, [wallet, refreshBalance, ensureApiKey]);
 
     const copyId = useCallback(() => {
-        if (!player) return;
-        navigator.clipboard.writeText(player.player_id);
+        if (!wallet) return;
+        navigator.clipboard.writeText(wallet.wallet_id);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-    }, [player]);
+    }, [wallet]);
 
     return (
         <div className="demo-page">
@@ -250,41 +254,41 @@ export default function Demo() {
 
             {/* Main content */}
             <div className="demo-grid">
-                {/* Step 1 – Create Player */}
-                <div className={`demo-card ${player ? 'demo-card--done' : ''}`}>
+                {/* Step 1 – Create Wallet */}
+                <div className={`demo-card ${wallet ? 'demo-card--done' : ''}`}>
                     <div className="demo-card-number">1</div>
                     <div className="demo-card-content">
                         <h3 className="demo-card-title">
                             <FiUser style={{ marginRight: '0.5rem' }} />
-                            Create Player
+                            Create Wallet
                         </h3>
                         <p className="demo-card-desc">
                             Generate a new burner wallet on Solana devnet. No seed phrases, no extensions.
                         </p>
 
-                        {!player ? (
-                            <button className="demo-action-btn" onClick={createPlayer} disabled={loading === 'create'}>
+                        {!wallet ? (
+                            <button className="demo-action-btn" onClick={createWallet} disabled={loading === 'create'}>
                                 {loading === 'create' ? (
                                     <><FiRefreshCw className="spin" /> Creating...</>
                                 ) : (
-                                    'Create My Player'
+                                    'Create My Wallet'
                                 )}
                             </button>
                         ) : (
                             <div className="demo-player-info">
                                 <div className="demo-info-row">
-                                    <span className="demo-info-label">Player ID</span>
+                                    <span className="demo-info-label">Wallet ID</span>
                                     <span className="demo-info-value">
-                                        <code>{player.player_id.slice(0, 8)}...{player.player_id.slice(-4)}</code>
+                                        <code>{wallet.wallet_id.slice(0, 8)}...{wallet.wallet_id.slice(-4)}</code>
                                         <button onClick={copyId} className="demo-copy-btn" title="Copy full ID">
                                             {copied ? <FiCheck /> : <FiCopy />}
                                         </button>
                                     </span>
                                 </div>
                                 <div className="demo-info-row">
-                                    <span className="demo-info-label">Wallet</span>
+                                    <span className="demo-info-label">Public Key</span>
                                     <span className="demo-info-value">
-                                        <code>{player.public_key.slice(0, 6)}...{player.public_key.slice(-4)}</code>
+                                        <code>{wallet.public_key.slice(0, 6)}...{wallet.public_key.slice(-4)}</code>
                                     </span>
                                 </div>
                             </div>
@@ -293,7 +297,7 @@ export default function Demo() {
                 </div>
 
                 {/* Step 2 – Fund Wallet */}
-                <div className={`demo-card ${!player ? 'demo-card--locked' : ''}`}>
+                <div className={`demo-card ${!wallet ? 'demo-card--locked' : ''}`}>
                     <div className="demo-card-number">2</div>
                     <div className="demo-card-content">
                         <h3 className="demo-card-title">
@@ -304,11 +308,11 @@ export default function Demo() {
                             Use Stripe test checkout to add funds to your Solana-based demo wallet.
                         </p>
 
-                        {player && (
+                        {wallet && (
                             <div className="demo-balance-row">
                                 <div className="demo-balance-item">
                                     <span className="demo-balance-label">USDC</span>
-                                    <span className="demo-balance-value">{player.usdc_balance?.toFixed(2) ?? '—'}</span>
+                                    <span className="demo-balance-value">{wallet.usdc_balance?.toFixed(2) ?? '—'}</span>
                                 </div>
                                 <button onClick={refreshBalance} className="demo-refresh-btn" disabled={loading === 'refresh'} title="Refresh balances">
                                     <FiRefreshCw className={loading === 'refresh' ? 'spin' : ''} />
@@ -319,7 +323,7 @@ export default function Demo() {
                         <button
                             className="demo-action-btn"
                             onClick={fundWallet}
-                            disabled={!player || loading === 'fund'}
+                            disabled={!wallet || loading === 'fund'}
                         >
                             {loading === 'fund' ? (
                                 <><FiRefreshCw className="spin" /> Opening Stripe...</>
@@ -330,37 +334,36 @@ export default function Demo() {
                     </div>
                 </div>
 
-                {/* Step 3 – Cash Out */}
-                <div className={`demo-card ${!player ? 'demo-card--locked' : ''}`}>
+                {/* Step 3 – Withdraw */}
+                <div className={`demo-card ${!wallet ? 'demo-card--locked' : ''}`}>
                     <div className="demo-card-number">3</div>
                     <div className="demo-card-content">
                         <h3 className="demo-card-title">
                             <FiDollarSign style={{ marginRight: '0.5rem' }} />
-                            Cash Out
+                            Withdraw
                         </h3>
                         <p className="demo-card-desc">
-                            Convert your USDC balance back to real USD and receive it directly to your bank account via Stripe.
+                            Withdraw your USDC balance. In production this settles to your bank account via Stripe Connect.
                         </p>
 
-                        {cashoutResult?.status === 'success' && (
+                        {withdrawResult?.status === 'settled' && (
                             <div className="demo-success">
                                 <span>
-                                    You successfully withdrew to test account
-                                    {' '}
-                                    <code>{cashoutResult.payout_destination_connect_account_id ?? 'N/A'}</code>.
+                                    Withdrew {withdrawResult.amount_usdc} USDC.
+                                    Remaining balance: {withdrawResult.remaining_balance?.toFixed(2) ?? '0.00'}.
                                 </span>
                             </div>
                         )}
 
                         <button
                             className="demo-action-btn demo-action-btn--cashout"
-                            onClick={cashOut}
-                            disabled={!player || loading === 'cashout'}
+                            onClick={withdraw}
+                            disabled={!wallet || loading === 'cashout'}
                         >
                             {loading === 'cashout' ? (
                                 <><FiRefreshCw className="spin" /> Processing...</>
                             ) : (
-                                'Cash Out to Bank'
+                                'Withdraw'
                             )}
                         </button>
                     </div>

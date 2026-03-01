@@ -211,6 +211,12 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
           properties: { id: { type: 'string' } },
           required: ['id'],
         },
+        body: {
+          type: 'object',
+          properties: {
+            amount_usdc: { type: 'number' },
+          },
+        },
         response: {
           200: {
             type: 'object',
@@ -291,6 +297,18 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
           },
           required: ['amount_usdc'],
         },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              wallet_id: { type: 'string' },
+              before_balance: { type: 'number' },
+              after_balance: { type: 'number' },
+              amount_usdc: { type: 'number' },
+              note: { type: ['string', 'null'] },
+            },
+          },
+        },
       },
     },
     withIdempotency(async (
@@ -351,6 +369,25 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
         querystring: {
           type: 'object',
           properties: { limit: { type: 'string' } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              wallet_id: { type: 'string' },
+              public_key: { type: 'string' },
+              transactions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    signature: { type: 'string' },
+                    blockTime: { type: ['number', 'null'] },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -440,6 +477,29 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
           properties: {
             dry_run: { type: 'boolean' },
             grace_hours: { type: 'number' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              dry_run: { type: 'boolean' },
+              grace_hours: { type: 'number' },
+              scanned: { type: 'number' },
+              eligible_count: { type: 'number' },
+              deleted_count: { type: 'number' },
+              eligible_wallet_ids: { type: 'array', items: { type: 'string' } },
+              skipped: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    wallet_id: { type: 'string' },
+                    reason: { type: 'string' },
+                  },
+                },
+              },
+            },
           },
         },
       },

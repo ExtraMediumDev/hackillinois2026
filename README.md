@@ -1,10 +1,10 @@
 # Splice API
 
-> Web2-to-Web3 gaming bridge on Solana — HackIllinois 2026
+> Web2-to-Web3 bridge on Solana — HackIllinois 2026
 >
 > **Tracks:** Stripe Best Web API · Solana
 
-Players pay with Stripe, and receive winnings directly to their debit card — no wallet, no seed phrase, no friction.
+Users pay with Stripe and cash out in USD — no wallet, no seed phrase, no friction. Any Solana-powered app (games, DeFi, marketplaces) can plug in.
 
 ---
 
@@ -12,33 +12,33 @@ Players pay with Stripe, and receive winnings directly to their debit card — n
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                          CLIENT / GAME UI                           │
+│                      CLIENT / APPLICATION UI                        │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │  REST (X-API-Key)
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        SPLICE API (Fastify)                         │
 │                                                                     │
-│  POST /v1/players ──► generateKeypair ──► encryptKeypair (AES-GCM) │
-│  GET  /v1/players/:id ──────────────────────────────────────────►  │
-│  POST /v1/games ────────────────────────────────────────────────►  │
-│  POST /v1/games/:id/join ──► idempotency lock ──► join_game ix     │
-│  POST /v1/games/:id/move ──► idempotency lock ──► submit_move ix  │
-│  POST /v1/webhooks/stripe ──► verify sig ──► fund escrow           │
+│  POST /v1/wallets ──► generateKeypair ──► encryptKeypair (AES-GCM) │
+│  GET  /v1/wallets/:id ──► live SOL + USDC balances                 │
+│  POST /v1/wallets/:id/deposit ──► Stripe Checkout session          │
+│  POST /v1/wallets/:id/transfer ──► idempotent credit / debit       │
+│  POST /v1/wallets/:id/withdraw ──► settle balance                  │
+│  POST /v1/wallets/:id/connect ──► Stripe Connect onboarding        │
+│  POST /v1/webhooks/stripe ──► verify sig ──► credit USDC           │
 └──────┬────────────────────────────────────┬──────────────────────────┘
        │ Upstash Redis                      │ Helius RPC (Devnet)
        ▼                                    ▼
 ┌─────────────────┐              ┌──────────────────────────────────┐
-│  player:{id}    │              │   Anchor Program (Splice)        │
-│  game:{id}      │              │   ┌──────────────────────────┐   │
-│  idempotent:{k} │              │   │ GameState PDA            │   │
-└─────────────────┘              │   │ EscrowVault PDA (USDC)   │   │
-                                 │   └──────────────────────────┘   │
-       │ Stripe SDK              └──────────────────────────────────┘
-       ▼
+│  player:{id}    │              │   Solana Devnet                  │
+│  idempotent:{k} │              │   ┌──────────────────────────┐   │
+└─────────────────┘              │   │ Burner wallet ATAs       │   │
+                                 │   │ USDC SPL token transfers  │   │
+       │ Stripe SDK              │   └──────────────────────────┘   │
+       ▼                         └──────────────────────────────────┘
 ┌────────────────────────────────┐
-│  Crypto Onramp (card → USDC)  │
-│  Connect (USDC → debit card)  │
+│  Checkout (card → credit USDC)│
+│  Connect  (USDC → USD payout) │
 └────────────────────────────────┘
 ```
 
@@ -49,7 +49,7 @@ Players pay with Stripe, and receive winnings directly to their debit card — n
 ### Prerequisites
 
 - Node.js 20+, npm
-- Solana CLI + Anchor AVM (see Phase 0 below)
+- Solana CLI (see Phase 0 below)
 - Upstash Redis DB
 - Helius API key (Devnet)
 - Stripe account (test mode)
@@ -65,10 +65,6 @@ sh -c "$(curl -sSfL https://release.solana.com/v1.18.12/install)"
 solana config set --url devnet
 solana-keygen new --outfile ~/.config/solana/id.json
 solana airdrop 5
-
-# Anchor AVM
-cargo install --git https://github.com/coral-xyz/anchor avm --locked
-avm install 0.30.1 && avm use 0.30.1
 ```
 
 ### Install & Run
@@ -85,14 +81,7 @@ cp .env.example .env
 # 3. Generate encryption key
 openssl rand -hex 32   # paste output as ENCRYPTION_KEY in .env
 
-# 4. Deploy the Anchor program (Devnet)
-cd ../program
-anchor build
-anchor deploy --provider.cluster devnet
-# Copy the Program ID output → paste as PROGRAM_ID in api/.env
-
-# 5. Start the API
-cd ../api
+# 4. Start the API
 npm run dev
 ```
 
@@ -118,10 +107,8 @@ cd api && npm run dev
 | `PROGRAM_ID` | Deployed Anchor program ID |
 | `STRIPE_SECRET_KEY` | Stripe secret key (`sk_test_...`) |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (`whsec_...`) |
-| `DEMO_PAYOUT_MODE` | Enable demo payout routing logic (true/false) |
-| `DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID` | Preconfigured Stripe connected account destination (`acct_...`) |
-| `DEMO_PAYOUT_SIMULATE` | In demo mode, simulate fiat payout success instead of requiring Stripe available balance (`true` recommended for demos) |
 | `USDC_MINT` | USDC devnet mint: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
+| `PLAYER_INACTIVE_GRACE_HOURS` | Hours before inactive wallets become eligible for cleanup (default 168) |
 
 ---
 
@@ -129,152 +116,184 @@ cd api && npm run dev
 
 All endpoints require `X-API-Key: <your-key>` header except `/health`, `/v1/webhooks/*`, and `/docs*`.
 
-### Players
+### Wallets
 
-#### `POST /v1/players` — Create burner wallet
+#### `POST /v1/wallets` — Create wallet
+
 ```bash
-curl -X POST http://localhost:3000/v1/players \
+curl -X POST http://localhost:3000/v1/wallets \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json"
 ```
-**Response:**
+
+**Response (201):**
+
 ```json
 {
-  "player_id": "550e8400-e29b-41d4-a716-446655440000",
+  "wallet_id": "550e8400-e29b-41d4-a716-446655440000",
   "public_key": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
 }
 ```
 
-#### `POST /v1/players/:id/checkout-session` — Get Stripe Checkout URL (demo payments)
-Creates a Stripe Checkout session; on payment success the webhook credits devnet USDC to this player. Use this when Crypto Onramp is not approved.
+#### `GET /v1/wallets/:id` — Get wallet balance
+
 ```bash
-curl -X POST http://localhost:3000/v1/players/$PLAYER_ID/checkout-session \
+curl http://localhost:3000/v1/wallets/$WALLET_ID \
+  -H "X-API-Key: $API_KEY"
+```
+
+**Response (200):**
+
+```json
+{
+  "wallet_id": "550e8400-...",
+  "public_key": "7xKXtg...",
+  "sol_balance": 0.001,
+  "usdc_balance": 5.00,
+  "on_chain_usdc": 0.00,
+  "simulated_usdc": 5.00
+}
+```
+
+`usdc_balance` is the total. `on_chain_usdc` is real USDC on Solana (from Stripe deposits). `simulated_usdc` is the portion managed by transfers/withdrawals.
+
+#### `POST /v1/wallets/:id/deposit` — Fund wallet via Stripe Checkout
+
+Creates a Stripe Checkout session; on payment success the webhook credits devnet USDC to this wallet.
+
+```bash
+curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/deposit \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"success_url": "https://yourapp.com/success", "cancel_url": "https://yourapp.com/cancel", "amount_usd": 0.5}'
 ```
-**Response:** `{ "url": "https://checkout.stripe.com/...", "amount_usd": 0.5 }` — redirect the user to `url`. Default amount is $0.50 (Stripe minimum).
 
-#### `GET /v1/players/:id` — Get player + live balances
+**Response (200):** `{ "url": "https://checkout.stripe.com/...", "amount_usd": 0.5 }` — redirect the user to `url`. Default amount is $0.50 (Stripe minimum).
+
+#### `POST /v1/wallets/:id/transfer` — Credit or debit balance (requires `Idempotency-Key`)
+
+Positive `amount_usdc` credits the wallet; negative debits it. Balance floors at 0.
+
 ```bash
-curl http://localhost:3000/v1/players/$PLAYER_ID \
-  -H "X-API-Key: $API_KEY"
+curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/transfer \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"amount_usdc": "2.00", "note": "prize winnings"}'
 ```
-**Response:**
+
+**Response (200):**
+
 ```json
 {
-  "player_id": "550e8400-...",
-  "public_key": "7xKXtg...",
-  "sol_balance": 0.001,
-  "usdc_balance": 1.05
+  "wallet_id": "550e8400-...",
+  "before_balance": 5.00,
+  "after_balance": 7.00,
+  "amount_usdc": 2.00,
+  "note": "prize winnings"
 }
 ```
 
-#### `GET /v1/players/:id/transactions` — Transaction history
+| Field | Required | Description |
+|-------|----------|-------------|
+| `amount_usdc` | Yes | String. Positive to credit, negative to debit. |
+| `note` | No | Freeform string for tracking. |
+
+#### `POST /v1/wallets/:id/withdraw` — Withdraw from wallet balance
+
+Withdraws USDC from the wallet's simulated balance. Omit `amount_usdc` to withdraw the full balance.
+
 ```bash
-curl "http://localhost:3000/v1/players/$PLAYER_ID/transactions?limit=10" \
+curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/withdraw \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_usdc": 3.00}'
+```
+
+**Response (200):**
+
+```json
+{
+  "status": "settled",
+  "wallet_id": "550e8400-...",
+  "public_key": "7xKXtg...",
+  "amount_usdc": 3.00,
+  "remaining_balance": 2.00,
+  "confirmation_id": "withdraw_550e8400_1709312345678",
+  "settlement_mode": "simulated"
+}
+```
+
+#### `GET /v1/wallets/:id/transactions` — On-chain transaction history
+
+```bash
+curl "http://localhost:3000/v1/wallets/$WALLET_ID/transactions?limit=10" \
   -H "X-API-Key: $API_KEY"
 ```
 
-#### `POST /v1/players/:id/connect` — Start Stripe Connect onboarding
+**Response (200):**
+
+```json
+{
+  "wallet_id": "550e8400-...",
+  "public_key": "7xKXtg...",
+  "transactions": [
+    { "signature": "5xT3...", "blockTime": 1709312345 }
+  ]
+}
+```
+
+#### `POST /v1/wallets/:id/connect` — Start Stripe Connect onboarding
+
 Creates or reuses a connected account and returns an onboarding link.
+
 ```bash
-curl -X POST http://localhost:3000/v1/players/$PLAYER_ID/connect \
+curl -X POST http://localhost:3000/v1/wallets/$WALLET_ID/connect \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json"
 ```
-**Response:** `{ "url": "https://connect.stripe.com/..." }`
 
-#### `POST /v1/players/:id/cashout` — Cash out player USDC
-Transfers USDC from burner wallet to treasury and then settles fiat payout.
-```bash
-curl -X POST http://localhost:3000/v1/players/$PLAYER_ID/cashout \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"amount_usdc": 0.5}'
-```
-If `amount_usdc` is omitted, the API attempts to cash out the player's full USDC balance.
+**Response (200):** `{ "url": "https://connect.stripe.com/..." }`
 
-#### `POST /v1/players/cleanup-inactive` — Cleanup inactive players
-Scans inactive players and removes those past grace period with effectively zero balances.
+#### `POST /v1/wallets/cleanup-inactive` — Cleanup inactive wallets
+
+Scans inactive wallets and removes those past grace period with effectively zero balances.
+
 ```bash
-curl -X POST http://localhost:3000/v1/players/cleanup-inactive \
+curl -X POST http://localhost:3000/v1/wallets/cleanup-inactive \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"dry_run": true, "grace_hours": 168}'
 ```
+
 Set `dry_run` to `false` to actually delete eligible records.
 
-### Games
+**Response (200):**
 
-#### `POST /v1/games` — Create game room
-```bash
-curl -X POST http://localhost:3000/v1/games \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"buy_in_usdc": "0.05", "max_players": 2}'
-```
-**Response:**
 ```json
 {
-  "game_id": "a1b2c3d4-...",
-  "pda_address": "FV2...",
-  "escrow_address": "GH3...",
-  "buy_in_usdc": "0.05",
-  "max_players": 2,
-  "status": "waiting"
-}
-```
-
-#### `GET /v1/games/:id` — Get game state
-```bash
-curl http://localhost:3000/v1/games/$GAME_ID \
-  -H "X-API-Key: $API_KEY"
-```
-
-#### `POST /v1/games/:id/join` — Join game (requires `Idempotency-Key`)
-```bash
-curl -X POST http://localhost:3000/v1/games/$GAME_ID/join \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"player_id": "'$PLAYER_ID'"}'
-```
-
-#### `POST /v1/games/:id/move` — Submit move (requires `Idempotency-Key`)
-```bash
-curl -X POST http://localhost:3000/v1/games/$GAME_ID/move \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"player_id": "'$PLAYER_ID'", "direction": "right"}'
-```
-Valid directions: `up`, `down`, `left`, `right`
-
-**Response:**
-```json
-{
-  "game_id": "a1b2c3d4-...",
-  "player_id": "550e8400-...",
-  "new_x": 1,
-  "new_y": 0,
-  "alive": true,
-  "status": "active",
-  "winner": null,
-  "grid_snapshot": [0, 0, 1, ...],
-  "collapse_round": 1
+  "dry_run": true,
+  "grace_hours": 168,
+  "scanned": 12,
+  "eligible_count": 2,
+  "deleted_count": 0,
+  "eligible_wallet_ids": ["abc-123", "def-456"],
+  "skipped": [
+    { "wallet_id": "ghi-789", "reason": "non-zero balance" }
+  ]
 }
 ```
 
 ### Webhooks
 
 #### `POST /v1/webhooks/stripe` — Stripe event handler
+
 Configured in Stripe Dashboard → Webhooks. No `X-API-Key` required (uses Stripe signature).
 
 Events handled:
-- `checkout.session.completed` — After Stripe Checkout payment, credits devnet USDC to the player's burner wallet (demo flow)
-- `crypto_onramp_session.fulfillment.succeeded` — currently logs fulfillment metadata (no automatic credit/join side-effects yet)
-- `account.updated` — currently logs connected account status updates
+- `checkout.session.completed` — After Stripe Checkout payment, credits devnet USDC to the wallet's burner address
+- `crypto_onramp_session.fulfillment.succeeded` — Logs fulfillment metadata (future: auto-credit)
+- `account.updated` — Logs connected account status updates
 
 ---
 
@@ -285,11 +304,11 @@ All errors follow a consistent structure:
 ```json
 {
   "status": "error",
-  "statusCode": 402,
+  "statusCode": 404,
   "error": {
-    "code": "INSUFFICIENT_FUNDS",
-    "message": "Your burner wallet lacks the 0.05 USDC required to join this game.",
-    "remediation": "Call POST /v1/players to get a Stripe top-up link."
+    "code": "WALLET_NOT_FOUND",
+    "message": "Wallet abc-123 not found.",
+    "remediation": "Create a wallet first via POST /v1/wallets."
   }
 }
 ```
@@ -297,19 +316,12 @@ All errors follow a consistent structure:
 | Code | HTTP | Meaning |
 |---|---|---|
 | `UNAUTHORIZED` | 401 | Missing/invalid X-API-Key |
-| `PLAYER_NOT_FOUND` | 404 | Player ID not found |
-| `GAME_NOT_FOUND` | 404 | Game ID not found |
-| `INSUFFICIENT_FUNDS` | 402 | Not enough USDC in burner wallet |
-| `GAME_FULL` | 409 | No slots available |
-| `GAME_NOT_JOINABLE` | 409 | Game is not in waiting state |
-| `GAME_NOT_ACTIVE` | 409 | Move submitted to non-active game |
-| `PLAYER_ELIMINATED` | 409 | Player already on lava |
-| `TILE_IS_LAVA` | 409 | Target tile is collapsed |
-| `OUT_OF_BOUNDS` | 400 | Move goes off the grid |
-| `MISSING_IDEMPOTENCY_KEY` | 400 | Required header absent |
-| `REQUEST_IN_FLIGHT` | 409 | Duplicate request in progress |
-| `NETWORK_CONGESTION` | 503 | Solana RPC blockhash not found |
-| `BLOCKCHAIN_ERROR` | 500 | Unclassified RPC error |
+| `WALLET_NOT_FOUND` | 404 | Wallet ID not found |
+| `INVALID_AMOUNT` | 400 | Zero, negative, or below-minimum amount |
+| `INSUFFICIENT_BALANCE` | 400 | Withdraw exceeds available balance |
+| `CHECKOUT_ERROR` | 500 | Stripe Checkout session failed |
+| `MISSING_IDEMPOTENCY_KEY` | 400 | Required header absent on transfer |
+| `REQUEST_IN_FLIGHT` | 409 | Duplicate idempotency key in progress |
 
 ---
 
@@ -327,36 +339,6 @@ Expiry: any future date. CVC: any 3 digits.
 
 ---
 
-## Anchor Smart Contract
-
-### Instructions
-
-| Instruction | Who Signs | Description |
-|---|---|---|
-| `initialize_game` | Authority | Creates GameState + EscrowVault PDAs |
-| `join_game` | Player burner | Transfers USDC to escrow, adds player |
-| `submit_move` | Player + Authority | Validates + records move on-chain |
-| `trigger_collapse` | Authority | Sets tiles to lava, eliminates players |
-| `declare_winner` | Authority | Transfers escrow to winner's ATA |
-
-### Build & Deploy
-
-```bash
-cd program
-anchor build
-anchor deploy --provider.cluster devnet
-# Update PROGRAM_ID in api/.env with the output
-```
-
-### Test
-
-```bash
-cd program
-anchor test --provider.cluster devnet
-```
-
----
-
 ## Postman Collection
 
 Import `docs/postman_collection.json` into Postman.
@@ -365,7 +347,15 @@ Set collection variables:
 - `base_url`: `http://localhost:3000`
 - `api_key`: value from your `.env`
 
-Run requests in order (1→6) for a full lifecycle demo.
+Run requests in order (1→7) for a full lifecycle demo:
+
+1. Create Wallet
+2. Deposit (Stripe Checkout)
+3. Get Wallet (check balances)
+4. Transfer (credit / debit)
+5. Withdraw
+6. Connect (Stripe onboarding)
+7. Cleanup Inactive Wallets
 
 ---
 
@@ -375,54 +365,50 @@ Run requests in order (1→6) for a full lifecycle demo.
 export API_KEY="your-api-key-here"
 export BASE="http://localhost:3000"
 
-# 1. Create two players
-P1=$(curl -sX POST $BASE/v1/players -H "X-API-Key: $API_KEY" | jq -r .player_id)
-P2=$(curl -sX POST $BASE/v1/players -H "X-API-Key: $API_KEY" | jq -r .player_id)
-echo "Player 1: $P1"
-echo "Player 2: $P2"
+# 1. Create a wallet
+WALLET=$(curl -sX POST $BASE/v1/wallets -H "X-API-Key: $API_KEY" | jq -r .wallet_id)
+echo "Wallet: $WALLET"
 
-# 2. (Fund via Stripe Onramp or devnet airdrop for USDC testing)
-# curl $BASE/v1/players/$P1 -H "X-API-Key: $API_KEY"  # check balance
-
-# 3. Create game
-GAME=$(curl -sX POST $BASE/v1/games \
+# 2. Deposit via Stripe Checkout
+curl -sX POST $BASE/v1/wallets/$WALLET/deposit \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"buy_in_usdc": "0.05", "max_players": 2}' | jq -r .game_id)
-echo "Game: $GAME"
+  -d '{"amount_usd": 5.00}' | jq .url
+# → Open the URL, pay with test card 4242...
 
-# 4. Both players join
-curl -sX POST $BASE/v1/games/$GAME/join \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+# 3. Check balance
+curl -s $BASE/v1/wallets/$WALLET -H "X-API-Key: $API_KEY" | jq
+
+# 4. Credit the wallet (e.g. app awards winnings)
+curl -sX POST $BASE/v1/wallets/$WALLET/transfer \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
-  -d "{\"player_id\": \"$P1\"}" | jq
+  -d '{"amount_usdc": "2.00", "note": "game win"}' | jq
 
-curl -sX POST $BASE/v1/games/$GAME/join \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d "{\"player_id\": \"$P2\"}" | jq
+# 5. Check updated balance
+curl -s $BASE/v1/wallets/$WALLET -H "X-API-Key: $API_KEY" | jq .usdc_balance
 
-# 5. Players take turns moving
-for dir in right down right; do
-  curl -sX POST $BASE/v1/games/$GAME/move \
-    -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-    -H "Idempotency-Key: $(uuidgen)" \
-    -d "{\"player_id\": \"$P1\", \"direction\": \"$dir\"}" | jq .status
-done
+# 6. Withdraw
+curl -sX POST $BASE/v1/wallets/$WALLET/withdraw \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_usdc": 7.00}' | jq
 
-# 6. Check final state
-curl -s $BASE/v1/games/$GAME -H "X-API-Key: $API_KEY" | jq '{status, winner, stripe_payout_initiated}'
+# 7. View on-chain transactions
+curl -s "$BASE/v1/wallets/$WALLET/transactions?limit=5" \
+  -H "X-API-Key: $API_KEY" | jq .transactions
 ```
 
 ---
 
 ## Security Notes
 
-- Burner wallet private keys are **AES-256-GCM encrypted** at rest in Redis
+- Burner wallet private keys are **AES-256-GCM encrypted** at rest in Upstash Redis
 - The `ENCRYPTION_KEY` is never stored alongside Redis data
 - All Stripe webhooks are signature-verified before processing
-- Idempotency keys prevent double-spend on join/move operations
-- Authority keypair is required to co-sign `submit_move` — no client can forge moves
+- Idempotency keys prevent double-spend on transfer operations
+- Authority keypair co-signs all on-chain USDC transfers
 
 ---
 

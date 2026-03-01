@@ -1,15 +1,14 @@
 {
   "info": {
     "name": "Splice API",
-    "description": "Up-to-date lifecycle collection for the Splice API HackIllinois 2026 demo.",
+    "description": "Wallet lifecycle collection for the Splice API — HackIllinois 2026.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000" },
     { "key": "api_key", "value": "your-api-key-here" },
-    { "key": "player_id", "value": "" },
-    { "key": "player_public_key", "value": "" },
-    { "key": "game_id", "value": "" }
+    { "key": "wallet_id", "value": "" },
+    { "key": "wallet_public_key", "value": "" }
   ],
   "item": [
     {
@@ -20,17 +19,17 @@
       }
     },
     {
-      "name": "1. Create Player",
+      "name": "1. Create Wallet",
       "event": [
         {
           "listen": "test",
           "script": {
             "exec": [
               "const res = pm.response.json();",
-              "pm.collectionVariables.set('player_id', res.player_id);",
-              "pm.collectionVariables.set('player_public_key', res.public_key);",
-              "console.log('player_id:', res.player_id);",
-              "console.log('player_public_key:', res.public_key);"
+              "pm.collectionVariables.set('wallet_id', res.wallet_id);",
+              "pm.collectionVariables.set('wallet_public_key', res.public_key);",
+              "console.log('wallet_id:', res.wallet_id);",
+              "console.log('wallet_public_key:', res.public_key);"
             ]
           }
         }
@@ -41,11 +40,11 @@
           { "key": "X-API-Key", "value": "{{api_key}}" },
           { "key": "Content-Type", "value": "application/json" }
         ],
-        "url": "{{base_url}}/v1/players"
+        "url": "{{base_url}}/v1/wallets"
       }
     },
     {
-      "name": "1b. Create Checkout Session",
+      "name": "2. Deposit (Stripe Checkout)",
       "request": {
         "method": "POST",
         "header": [
@@ -56,11 +55,11 @@
           "mode": "raw",
           "raw": "{\n  \"success_url\": \"http://localhost:5173/demo/stripe-success\",\n  \"cancel_url\": \"http://localhost:5173/demo/stripe-cancel\",\n  \"amount_usd\": 0.5\n}"
         },
-        "url": "{{base_url}}/v1/players/{{player_id}}/checkout-session"
+        "url": "{{base_url}}/v1/wallets/{{wallet_id}}/deposit"
       }
     },
     {
-      "name": "1c. Simulate Stripe Checkout Webhook (local)",
+      "name": "2b. Simulate Stripe Checkout Webhook (local)",
       "request": {
         "method": "POST",
         "header": [
@@ -69,43 +68,66 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"metadata\": { \"player_id\": \"{{player_id}}\" },\n      \"client_reference_id\": \"{{player_id}}\",\n      \"amount_total\": 50,\n      \"payment_status\": \"paid\"\n    }\n  }\n}"
+          "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"metadata\": { \"player_id\": \"{{wallet_id}}\" },\n      \"client_reference_id\": \"{{wallet_id}}\",\n      \"amount_total\": 50,\n      \"payment_status\": \"paid\"\n    }\n  }\n}"
         },
         "url": "{{base_url}}/v1/webhooks/stripe"
       }
     },
     {
-      "name": "2. Get Player (check balances)",
+      "name": "3. Get Wallet (check balances)",
       "request": {
         "method": "GET",
         "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
-        "url": "{{base_url}}/v1/players/{{player_id}}"
+        "url": "{{base_url}}/v1/wallets/{{wallet_id}}"
       }
     },
     {
-      "name": "2b. Get Player Transactions",
+      "name": "3b. Get Wallet Transactions",
       "request": {
         "method": "GET",
         "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
         "url": {
-          "raw": "{{base_url}}/v1/players/{{player_id}}/transactions?limit=10",
+          "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=10",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "wallets", "{{wallet_id}}", "transactions"],
           "query": [{ "key": "limit", "value": "10" }]
         }
       }
     },
     {
-      "name": "2c. Create/Reuse Connect Account",
+      "name": "4. Transfer (credit wallet)",
       "request": {
         "method": "POST",
         "header": [
           { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" }
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
         ],
-        "url": "{{base_url}}/v1/players/{{player_id}}/connect"
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount_usdc\": \"2.00\",\n  \"note\": \"prize winnings\"\n}"
+        },
+        "url": "{{base_url}}/v1/wallets/{{wallet_id}}/transfer"
       }
     },
     {
-      "name": "2d. Cash Out Player",
+      "name": "4b. Transfer (debit wallet)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount_usdc\": \"-0.50\",\n  \"note\": \"entry fee\"\n}"
+        },
+        "url": "{{base_url}}/v1/wallets/{{wallet_id}}/transfer"
+      }
+    },
+    {
+      "name": "5. Withdraw",
       "request": {
         "method": "POST",
         "header": [
@@ -116,11 +138,22 @@
           "mode": "raw",
           "raw": "{\n  \"amount_usdc\": 0.5\n}"
         },
-        "url": "{{base_url}}/v1/players/{{player_id}}/cashout"
+        "url": "{{base_url}}/v1/wallets/{{wallet_id}}/withdraw"
       }
     },
     {
-      "name": "2e. Cleanup Inactive Players (dry run)",
+      "name": "6. Connect (Stripe onboarding)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{api_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/v1/wallets/{{wallet_id}}/connect"
+      }
+    },
+    {
+      "name": "7. Cleanup Inactive Wallets (dry run)",
       "request": {
         "method": "POST",
         "header": [
@@ -131,118 +164,7 @@
           "mode": "raw",
           "raw": "{\n  \"dry_run\": true,\n  \"grace_hours\": 168\n}"
         },
-        "url": "{{base_url}}/v1/players/cleanup-inactive"
-      }
-    },
-    {
-      "name": "3. Create Game",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "exec": [
-              "const res = pm.response.json();",
-              "pm.collectionVariables.set('game_id', res.game_id);",
-              "console.log('game_id:', res.game_id);"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"buy_in_usdc\": \"0.05\",\n  \"max_players\": 2\n}"
-        },
-        "url": "{{base_url}}/v1/games"
-      }
-    },
-    {
-      "name": "4. Join Game (Player 1, force_start)",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"force_start\": true\n}"
-        },
-        "url": "{{base_url}}/v1/games/{{game_id}}/join"
-      }
-    },
-    {
-      "name": "4b. Start Game (manual)",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
-        ],
-        "url": "{{base_url}}/v1/games/{{game_id}}/start"
-      }
-    },
-    {
-      "name": "5a. Move — Right",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"direction\": \"right\"\n}"
-        },
-        "url": "{{base_url}}/v1/games/{{game_id}}/move"
-      }
-    },
-    {
-      "name": "5b. Move — Down",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"direction\": \"down\"\n}"
-        },
-        "url": "{{base_url}}/v1/games/{{game_id}}/move"
-      }
-    },
-    {
-      "name": "6. Resolve Game (external, custom %)",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "X-API-Key", "value": "{{api_key}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Idempotency-Key", "value": "{{$guid}}" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"winner\": \"{{player_id}}\",\n  \"placements\": [\n    { \"player_id\": \"{{player_id}}\", \"place\": 1 }\n  ],\n  \"distribution\": [100]\n}"
-        },
-        "url": "{{base_url}}/v1/games/{{game_id}}/resolve"
-      }
-    },
-    {
-      "name": "7. Get Game (confirm resolution + payouts)",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
-        "url": "{{base_url}}/v1/games/{{game_id}}"
+        "url": "{{base_url}}/v1/wallets/cleanup-inactive"
       }
     }
   ]

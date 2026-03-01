@@ -177,22 +177,23 @@ h1 {
   transform: translateY(-1px);
 }
 
-/* Swagger UI Dark Mode Overrides via CSS Filters */
+/* ─── API Docs Page ─── */
 .api-docs-container {
-  max-width: 1200px;
+  max-width: 900px;
   margin: 0 auto;
   position: relative;
   z-index: 10;
 }
 
 .docs-header {
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem;
 }
 
 .docs-top-bar {
-  display: flex;
-  justify-content: flex-start;
-  margin-bottom: 1rem;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
 }
 
 .docs-back-btn {
@@ -210,47 +211,192 @@ h1 {
   white-space: normal;
 }
 
-.swagger-wrapper {
-  background: #fff;
-  /* Keep base white so invert works perfectly */
-  border-radius: 12px;
-  padding: 1rem;
+.docs-subtitle {
+  text-align: center;
+  color: rgba(243, 245, 255, 0.55);
+  font-size: 0.95rem;
+  margin: 0.5rem 0 0;
+}
+
+.docs-subtitle code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* Endpoint row */
+.docs-endpoint-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+.docs-endpoint-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.docs-method-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 0.2em 0.6em;
+  border-radius: 6px;
+  border: 1px solid;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.docs-endpoint-path {
+  font-size: 0.9rem;
+  color: #f3f5ff;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.docs-endpoint-label {
+  color: rgba(243, 245, 255, 0.5);
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.docs-expand-icon {
+  color: rgba(243, 245, 255, 0.35);
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+}
+
+/* Expanded detail */
+.docs-endpoint-detail {
   overflow: hidden;
-  /* Invert colors, adjust lightness slightly, and rotate hue so base colors shift towards our theme's blue/purple rather than defaulting to orange */
-  filter: invert(95%) hue-rotate(190deg) brightness(1.1) contrast(0.9);
-  /* Create an outer glow to match the site */
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(106, 92, 255, 0.2);
+  padding-top: 0.75rem;
 }
 
-/* Fix some Swagger UI anomalies after inversion and apply global site font */
-.swagger-wrapper .swagger-ui,
-.swagger-wrapper .swagger-ui *,
-.swagger-wrapper .swagger-ui .info .title,
-.swagger-wrapper .swagger-ui .opblock .opblock-summary-method {
-  font-family: 'Figtree', sans-serif !important;
+.docs-endpoint-desc {
+  margin: 0 0 0.75rem;
+  color: rgba(243, 245, 255, 0.7);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
-/* Hide the version tags at the top of the title */
-.swagger-wrapper .swagger-ui .info .title span {
-  display: none !important;
+.docs-endpoint-meta {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
 }
 
-/* Completely hide the native Swagger UI title card as we inject our own React component */
-.swagger-wrapper .swagger-ui .info {
-  display: none !important;
+.docs-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.55em;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
-/* Hide the servers dropdown box entirely */
-.swagger-wrapper .swagger-ui .scheme-container {
-  display: none !important;
+.docs-tag--auth {
+  background: rgba(106, 92, 255, 0.12);
+  color: #a59bff;
+  border: 1px solid rgba(106, 92, 255, 0.25);
 }
 
-/* Make the operation blocks less blocky and better fit the theme */
-.swagger-wrapper .swagger-ui .opblock {
-  border-radius: 12px !important;
-  border: none !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-  margin-bottom: 1rem !important;
+.docs-tag--idempotent {
+  background: rgba(77, 233, 168, 0.12);
+  color: #4de9a8;
+  border: 1px solid rgba(77, 233, 168, 0.25);
+}
+
+/* Param tables */
+.docs-param-section {
+  margin-bottom: 0.75rem;
+}
+
+.docs-param-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(243, 245, 255, 0.4);
+  font-weight: 600;
+}
+
+.docs-param-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.docs-param-name {
+  color: #a59bff;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.docs-param-type {
+  color: rgba(243, 245, 255, 0.35);
+  font-size: 0.75rem;
+}
+
+.docs-param-required {
+  color: #ff7eb3;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.docs-param-desc {
+  color: rgba(243, 245, 255, 0.6);
+}
+
+/* Code blocks */
+.docs-code-block {
+  margin: 0.35rem 0 0;
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: rgba(243, 245, 255, 0.8);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* cURL header with copy button */
+.docs-curl-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.docs-copy-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(243, 245, 255, 0.5);
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.docs-copy-btn:hover {
+  color: #f3f5ff;
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .back-btn {
@@ -281,7 +427,10 @@ h1 {
 }
 
 .demo-top-bar {
-  margin-bottom: 1.5rem;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
 }
 
 .demo-hero {
