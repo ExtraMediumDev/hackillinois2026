@@ -29,7 +29,7 @@ Players pay with Stripe, and receive winnings directly to their debit card — n
        │ Upstash Redis                      │ Helius RPC (Devnet)
        ▼                                    ▼
 ┌─────────────────┐              ┌──────────────────────────────────┐
-│  player:{id}    │              │   Anchor Program (Ignite)        │
+│  player:{id}    │              │   Anchor Program (Splice)        │
 │  game:{id}      │              │   ┌──────────────────────────┐   │
 │  idempotent:{k} │              │   │ GameState PDA            │   │
 └─────────────────┘              │   │ EscrowVault PDA (USDC)   │   │

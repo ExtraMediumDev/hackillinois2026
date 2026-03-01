@@ -142,3 +142,386 @@ h1 {
     max-width: 420px;
   }
 }
+
+/* Base button styling for the docs link */
+.primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem 1.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(106, 92, 255, 0.2);
+  border: 1px solid rgba(174, 182, 255, 0.3);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.primary-btn:hover {
+  background: rgba(106, 92, 255, 0.4);
+  border-color: rgba(174, 182, 255, 0.5);
+  box-shadow: 0 4px 20px rgba(106, 92, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* Swagger UI Dark Mode Overrides via CSS Filters */
+.api-docs-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 10;
+}
+
+.swagger-wrapper {
+  background: #fff;
+  /* Keep base white so invert works perfectly */
+  border-radius: 12px;
+  padding: 1rem;
+  overflow: hidden;
+  /* Invert colors, adjust lightness slightly, and rotate hue so base colors shift towards our theme's blue/purple rather than defaulting to orange */
+  filter: invert(95%) hue-rotate(190deg) brightness(1.1) contrast(0.9);
+  /* Create an outer glow to match the site */
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(106, 92, 255, 0.2);
+}
+
+/* Fix some Swagger UI anomalies after inversion and apply global site font */
+.swagger-wrapper .swagger-ui,
+.swagger-wrapper .swagger-ui *,
+.swagger-wrapper .swagger-ui .info .title,
+.swagger-wrapper .swagger-ui .opblock .opblock-summary-method {
+  font-family: 'Figtree', sans-serif !important;
+}
+
+/* Hide the version tags at the top of the title */
+.swagger-wrapper .swagger-ui .info .title span {
+  display: none !important;
+}
+
+/* Completely hide the native Swagger UI title card as we inject our own React component */
+.swagger-wrapper .swagger-ui .info {
+  display: none !important;
+}
+
+/* Hide the servers dropdown box entirely */
+.swagger-wrapper .swagger-ui .scheme-container {
+  display: none !important;
+}
+
+/* Make the operation blocks less blocky and better fit the theme */
+.swagger-wrapper .swagger-ui .opblock {
+  border-radius: 12px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  margin-bottom: 1rem !important;
+}
+
+.back-btn {
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.back-btn:hover {
+  color: #fff;
+  transform: translateX(-4px);
+}
+
+/* Accent variant of primary button */
+.primary-btn--accent {
+  background: rgba(77, 233, 168, 0.15);
+  border-color: rgba(77, 233, 168, 0.35);
+}
+
+.primary-btn--accent:hover {
+  background: rgba(77, 233, 168, 0.3);
+  border-color: rgba(77, 233, 168, 0.55);
+  box-shadow: 0 4px 20px rgba(77, 233, 168, 0.25);
+}
+
+/* ─── Demo Page ─── */
+.demo-page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.demo-top-bar {
+  margin-bottom: 1.5rem;
+}
+
+.demo-hero {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.demo-subtitle {
+  color: #d8dcff;
+  font-size: 1.15rem;
+  margin: 0.75rem auto 0;
+  max-width: 560px;
+}
+
+.demo-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 70, 70, 0.12);
+  border: 1px solid rgba(255, 70, 70, 0.3);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+  color: #ff9a9a;
+  font-size: 0.9rem;
+}
+
+.demo-error-close {
+  background: none;
+  border: none;
+  color: #ff9a9a;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 680px) {
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.demo-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(174, 182, 255, 0.12);
+  border-radius: 16px;
+  padding: 1.75rem 1.5rem 1.5rem;
+  backdrop-filter: blur(12px);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.demo-card:hover {
+  border-color: rgba(174, 182, 255, 0.25);
+  box-shadow: 0 8px 32px rgba(106, 92, 255, 0.1);
+}
+
+.demo-card--done {
+  border-color: rgba(77, 233, 168, 0.3);
+}
+
+.demo-card--locked {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.demo-card--locked.demo-card:hover {
+  border-color: rgba(174, 182, 255, 0.12);
+  box-shadow: none;
+}
+
+.demo-card-number {
+  position: absolute;
+  top: -0.65rem;
+  left: 1.25rem;
+  background: linear-gradient(135deg, #6a5cff, #a855f7);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.75rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.demo-card-title {
+  display: flex;
+  align-items: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #eef0ff;
+  margin: 0 0 0.5rem;
+}
+
+.demo-card-desc {
+  color: #a8aedd;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+/* Action buttons inside demo cards */
+.demo-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.75rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: 'Figtree', sans-serif;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(106, 92, 255, 0.35), rgba(168, 85, 247, 0.3));
+  border: 1px solid rgba(174, 182, 255, 0.25);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.demo-action-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(106, 92, 255, 0.55), rgba(168, 85, 247, 0.5));
+  box-shadow: 0 4px 20px rgba(106, 92, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.demo-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.demo-action-btn--cashout {
+  background: linear-gradient(135deg, rgba(77, 233, 168, 0.25), rgba(52, 211, 153, 0.2));
+  border-color: rgba(77, 233, 168, 0.3);
+}
+
+.demo-action-btn--cashout:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(77, 233, 168, 0.45), rgba(52, 211, 153, 0.4));
+  box-shadow: 0 4px 20px rgba(77, 233, 168, 0.25);
+}
+
+/* Player info display */
+.demo-player-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.demo-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.demo-info-label {
+  color: #8b91c7;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.demo-info-value {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.demo-info-value code {
+  background: rgba(106, 92, 255, 0.12);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #c6cbff;
+}
+
+.demo-copy-btn {
+  background: none;
+  border: none;
+  color: #8b91c7;
+  cursor: pointer;
+  padding: 0.15rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.demo-copy-btn:hover {
+  color: #fff;
+}
+
+/* Balance display */
+.demo-balance-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.8rem;
+  background: rgba(106, 92, 255, 0.08);
+  border-radius: 10px;
+}
+
+.demo-balance-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.demo-balance-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #8b91c7;
+}
+
+.demo-balance-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #eef0ff;
+}
+
+.demo-refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #8b91c7;
+  cursor: pointer;
+  padding: 0.3rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.demo-refresh-btn:hover {
+  color: #fff;
+}
+
+/* Coming soon badge */
+.demo-coming-soon {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a8aedd;
+  background: rgba(174, 182, 255, 0.08);
+  border: 1px dashed rgba(174, 182, 255, 0.25);
+  border-radius: 8px;
+}
+
+/* Spinner animation for loading state */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+/* Game card styling */
+.demo-card--game {
+  opacity: 0.6;
+  border-style: dashed;
+}
