@@ -3,9 +3,8 @@ import DecryptedText from './DecryptedText';
 import { FiArrowLeft, FiUser, FiCreditCard, FiDollarSign, FiCopy, FiCheck, FiRefreshCw } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 
-const API_BASE = 'http://localhost:3000';
-// Set this to your API key from api/.env, or pass VITE_API_KEY at build time
-const API_KEY = 'dev-api-key-change-in-production';
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
+const API_KEY = import.meta.env.VITE_API_KEY ?? '';
 
 interface PlayerData {
     player_id: string;
@@ -29,11 +28,22 @@ export default function Demo() {
         'Content-Type': 'application/json',
     };
 
+    const ensureApiKey = useCallback((): boolean => {
+        if (API_KEY) return true;
+        setError('Missing VITE_API_KEY. Set it in landing/.env.local to call protected API routes.');
+        return false;
+    }, []);
+
     const createPlayer = useCallback(async () => {
+        if (!ensureApiKey()) return;
         setLoading('create');
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/v1/players`, { method: 'POST', headers: authHeaders });
+            const res = await fetch(`${API_BASE}/v1/players`, {
+                method: 'POST',
+                headers: jsonHeaders,
+                body: '{}',
+            });
             if (!res.ok) throw new Error(`Failed to create player (${res.status})`);
             const data = await res.json();
             setPlayer({ player_id: data.player_id, public_key: data.public_key });
@@ -42,9 +52,10 @@ export default function Demo() {
         } finally {
             setLoading(null);
         }
-    }, []);
+    }, [ensureApiKey]);
 
     const refreshBalance = useCallback(async () => {
+        if (!ensureApiKey()) return;
         if (!player) return;
         setLoading('refresh');
         setError(null);
@@ -58,9 +69,10 @@ export default function Demo() {
         } finally {
             setLoading(null);
         }
-    }, [player]);
+    }, [player, ensureApiKey]);
 
     const fundWallet = useCallback(async () => {
+        if (!ensureApiKey()) return;
         if (!player) return;
         setLoading('fund');
         setError(null);
@@ -82,16 +94,50 @@ export default function Demo() {
         } finally {
             setLoading(null);
         }
-    }, [player]);
+    }, [player, ensureApiKey]);
+
+    const simulateDeposit = useCallback(async () => {
+        if (!player) return;
+        setLoading('simulate');
+        setError(null);
+        try {
+            const res = await fetch(`${API_BASE}/v1/webhooks/stripe`, {
+                method: 'POST',
+                headers: {
+                    'stripe-signature': 'test-signature',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type: 'checkout.session.completed',
+                    data: {
+                        object: {
+                            metadata: { player_id: player.player_id },
+                            client_reference_id: player.player_id,
+                            amount_total: 50,
+                            payment_status: 'paid',
+                        },
+                    },
+                }),
+            });
+            if (!res.ok) throw new Error(`Simulation failed (${res.status})`);
+            await refreshBalance();
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : 'Failed to simulate deposit');
+        } finally {
+            setLoading(null);
+        }
+    }, [player, refreshBalance]);
 
     const cashOut = useCallback(async () => {
+        if (!ensureApiKey()) return;
         if (!player) return;
         setLoading('cashout');
         setError(null);
         try {
             const res = await fetch(`${API_BASE}/v1/players/${player.player_id}/cashout`, {
                 method: 'POST',
-                headers: authHeaders,
+                headers: jsonHeaders,
+                body: '{}',
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
@@ -103,7 +149,7 @@ export default function Demo() {
         } finally {
             setLoading(null);
         }
-    }, [player, refreshBalance]);
+    }, [player, refreshBalance, ensureApiKey]);
 
     const copyId = useCallback(() => {
         if (!player) return;
@@ -199,7 +245,7 @@ export default function Demo() {
                             Fund Wallet
                         </h3>
                         <p className="demo-card-desc">
-                            Pay with a test card via Stripe Checkout. USDC is credited to your burner wallet automatically.
+                            Use real test checkout, or click simulation for instant in-UI credit during judging.
                         </p>
 
                         {player && (
@@ -227,6 +273,18 @@ export default function Demo() {
                                 <><FiRefreshCw className="spin" /> Opening Stripe...</>
                             ) : (
                                 'Fund with $0.50'
+                            )}
+                        </button>
+                        <button
+                            className="demo-action-btn"
+                            style={{ marginTop: '0.6rem', background: 'rgba(106, 92, 255, 0.18)' }}
+                            onClick={simulateDeposit}
+                            disabled={!player || loading === 'simulate'}
+                        >
+                            {loading === 'simulate' ? (
+                                <><FiRefreshCw className="spin" /> Simulating...</>
+                            ) : (
+                                'Simulate $0.50 Deposit'
                             )}
                         </button>
                     </div>
