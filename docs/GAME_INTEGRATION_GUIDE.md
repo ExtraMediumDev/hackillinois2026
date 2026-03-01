@@ -16,7 +16,7 @@
 6. Play (move or client) POST /v1/games/:id/move  (grid games only)
 7. Resolve               POST /v1/games/:id/resolve  (credits in-app balance only)
 8. Check Final State     GET  /v1/games/:id
-9. Cash Out              POST /v1/players/:id/cashout  (user-initiated Stripe withdrawal)
+9. Cash Out              POST /v1/players/:id/cashout  (user-initiated, returns confirmation)
 ```
 
 ---
@@ -234,25 +234,31 @@ Fields `placements`, `payouts`, `distribution_rule` only appear after the game i
 
 ### 9. `POST /v1/players/:id/cashout`
 
-**Withdraws funds to real money via Stripe.** This is the only endpoint that triggers a Stripe payout. Called when the user clicks "Cash Out" — never triggered automatically by resolve.
+Cashes out the player's in-app balance. Returns a confirmation with the player's account info (from deposit) so the client can display it. No Stripe Connect or onboarding needed.
 
 ```json
-// Request (optional body)
+// Request (optional — omit to cash out full balance)
 { "amount_usdc": 1.50 }
 
 // Response 200
 {
   "status": "settled",
-  "solana_signature": "...",
-  "stripe_payout_id": "po_...",
-  "amount_transferred": 1.50,
-  "settlement_mode": "demo",
-  "fiat_payout_status": "pending",
-  "payout_destination_connect_account_id": "acct_..."
+  "player_id": "uuid",
+  "public_key": "base58...",
+  "amount_usdc": 1.50,
+  "remaining_balance": 0.50,
+  "confirmation_id": "cashout_abc12345_1709312345678",
+  "settlement_mode": "simulated"
 }
 ```
 
-Requires the player to have a connected Stripe account (via onboarding). If `amount_usdc` is omitted, cashes out the full balance.
+| Field | Description |
+|-------|-------------|
+| `player_id` | The player's account ID |
+| `public_key` | The wallet address (same one used for deposit) |
+| `amount_usdc` | Amount cashed out |
+| `remaining_balance` | Balance left after cashout |
+| `confirmation_id` | Unique confirmation ID for display |
 
 ---
 
@@ -330,7 +336,7 @@ The API manages a crypto wallet per player. Your game doesn't need to understand
 Fund (Stripe checkout)  →  balance goes up
 Resolve (player won)    →  balance goes up   (you send positive net_usdc)
 Resolve (player lost)   →  balance goes down (you send negative net_usdc)
-Cashout                 →  balance → real money via Stripe (user-initiated)
+Cashout                 →  balance deducted, confirmation returned (user-initiated)
 ```
 
 The API is a wallet. Your game tells it what happened. That's it.

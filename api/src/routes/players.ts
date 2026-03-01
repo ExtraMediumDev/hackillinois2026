@@ -1,17 +1,13 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { generateKeypair, createPlayerRecord, ensurePlayerLifecycleFields, markPlayerActive, markPlayerInactive } from '../services/wallet';
 import { savePlayer, getPlayer, getAllPlayerIds, deletePlayer } from '../services/redis';
-import { createOnrampSession, createCheckoutSession, createConnectAccount, createConnectOnboardingLink, createTransferToConnectedAccount, initiateInstantPayout } from '../services/stripe';
-import { getSolBalance, getTokenBalance, getTransactionHistory, transferUsdcFromPlayer } from '../services/solana';
-import { decryptKeypair } from '../services/wallet';
+import { createOnrampSession, createCheckoutSession, createConnectAccount, createConnectOnboardingLink } from '../services/stripe';
+import { getSolBalance, getTokenBalance, getTransactionHistory } from '../services/solana';
 
 export default async function playerRoutes(app: FastifyInstance): Promise<void> {
   const GRACE_HOURS_DEFAULT = parseInt(process.env.PLAYER_INACTIVE_GRACE_HOURS ?? '168', 10);
   const ZERO_USDC_EPSILON = 0.000001;
   const ZERO_SOL_EPSILON = 0.00001;
-  const DEMO_PAYOUT_DESTINATION = process.env.DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID;
-  const DEMO_PAYOUT_MODE = process.env.DEMO_PAYOUT_MODE === 'true' || Boolean(DEMO_PAYOUT_DESTINATION);
-  const DEMO_PAYOUT_SIMULATE = process.env.DEMO_PAYOUT_SIMULATE !== 'false';
 
   const normalizeAndPersistIfNeeded = async (player: ReturnType<typeof ensurePlayerLifecycleFields>): Promise<typeof player> => {
     const normalized = ensurePlayerLifecycleFields(player);
@@ -349,7 +345,7 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
     '/players/:id/cashout',
     {
       schema: {
-        description: 'Offramps USDC from the burner wallet to the user\'s connected Stripe bank account.',
+        description: 'Cash out player balance. Deducts from in-app balance and returns confirmation with account details.',
         tags: ['Players'],
         security: [{ apiKey: [] }],
         params: {
@@ -357,23 +353,17 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
           properties: { id: { type: 'string' } },
           required: ['id'],
         },
-        body: {
-          type: 'object',
-          properties: {
-            amount_usdc: { type: 'number' },
-          },
-        },
         response: {
           200: {
             type: 'object',
             properties: {
               status: { type: 'string' },
-              solana_signature: { type: 'string' },
-              stripe_payout_id: { type: 'string' },
-              amount_transferred: { type: 'number' },
+              player_id: { type: 'string' },
+              public_key: { type: 'string' },
+              amount_usdc: { type: 'number' },
+              remaining_balance: { type: 'number' },
+              confirmation_id: { type: 'string' },
               settlement_mode: { type: 'string' },
-              fiat_payout_status: { type: 'string' },
-              payout_destination_connect_account_id: { type: 'string' },
             },
           },
         },
@@ -391,148 +381,26 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
 
       const simulatedBal = player.simulated_usdc_balance ?? 0;
       const requestedAmount = request.body?.amount_usdc;
+      const amount = requestedAmount !== undefined ? requestedAmount : simulatedBal;
 
-      // Simulated cashout: deduct from simulated_usdc_balance (game winnings).
-      // No on-chain transfer or Stripe Connect needed.
-      if (simulatedBal > 0 && (requestedAmount === undefined || requestedAmount <= simulatedBal)) {
-        const amount = requestedAmount !== undefined ? requestedAmount : simulatedBal;
-        if (amount <= 0) {
-          return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INVALID', message: 'Cannot transfer 0.', remediation: '' } });
-        }
-        player.simulated_usdc_balance = simulatedBal - amount;
-        await savePlayer(player);
-
-        return reply.send({
-          status: 'settled',
-          solana_signature: 'simulated_cashout',
-          stripe_payout_id: `simulated_cashout_${player.player_id.slice(0, 8)}_${Date.now()}`,
-          amount_transferred: amount,
-          settlement_mode: 'simulated',
-          fiat_payout_status: 'simulated_success',
-          payout_destination_connect_account_id: 'simulated',
-        });
+      if (amount <= 0) {
+        return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INVALID_AMOUNT', message: 'Nothing to cash out.', remediation: 'Win a game first to earn a balance.' } });
+      }
+      if (amount > simulatedBal) {
+        return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INSUFFICIENT_BALANCE', message: `Requested ${amount} but balance is ${simulatedBal.toFixed(2)}.`, remediation: 'Request a smaller amount or omit amount_usdc to cash out the full balance.' } });
       }
 
-      if (DEMO_PAYOUT_MODE && !DEMO_PAYOUT_DESTINATION) {
-        return reply.code(500).send({
-          status: 'error',
-          statusCode: 500,
-          error: {
-            code: 'DEMO_PAYOUT_CONFIG_MISSING',
-            message: 'Demo payout mode is enabled but DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID is missing.',
-            remediation: 'Set a preconfigured Stripe connected account ID in env.',
-          },
-        });
-      }
-
-      if (!DEMO_PAYOUT_MODE && !player.stripe_connect_account_id) {
-        return reply.code(400).send({
-          status: 'error',
-          statusCode: 400,
-          error: {
-            code: 'CONNECT_ACCOUNT_MISSING',
-            message: 'You have not linked a bank account.',
-            remediation: 'Call POST /v1/players/:id/connect to set up payouts before cashing out.',
-          },
-        });
-      }
-
-      const usdcMint = process.env.USDC_MINT!;
-      const currentUsdcBalance = await getTokenBalance(player.public_key, usdcMint);
-
-      const amountToTransfer = requestedAmount !== undefined ? requestedAmount : currentUsdcBalance;
-
-      if (amountToTransfer <= 0) {
-        return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INVALID', message: 'Cannot transfer 0.', remediation: '' } });
-      }
-      if (currentUsdcBalance < amountToTransfer) {
-        return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INSUFFICIENT', message: 'Not enough balance.', remediation: '' } });
-      }
-
-      player.pending_payout = true;
-      player.pending_onchain_settlement = true;
-      await savePlayer(markPlayerActive(player));
-
-      const keypair = decryptKeypair(player.encrypted_keypair);
-
-      // Step 1: Transfer USDC from Burner Wallet -> API Master Treasury
-      // We read the authority public key from our own Keypair config
-      const fs = require('fs');
-      const path = require('path');
-      const os = require('os');
-      const keyPath = process.env.AUTHORITY_KEYPAIR_PATH!.startsWith('~')
-        ? path.join(os.homedir(), process.env.AUTHORITY_KEYPAIR_PATH!.slice(1))
-        : path.resolve(process.env.AUTHORITY_KEYPAIR_PATH!);
-      const raw = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
-      const authorityKeypair = require('@solana/web3.js').Keypair.fromSecretKey(Uint8Array.from(raw));
-      const treasuryAddress = authorityKeypair.publicKey.toBase58();
-
-      let solanaSignature;
-      try {
-        solanaSignature = await transferUsdcFromPlayer(
-          keypair,
-          treasuryAddress,
-          amountToTransfer
-        );
-      } catch (err) {
-        player.pending_onchain_settlement = false;
-        player.pending_payout = false;
-        await savePlayer(player);
-        app.log.error({ err, playerId: player.player_id }, 'Web3 Cashout Failed');
-        return reply.code(500).send({ status: 'error', statusCode: 500, error: { code: 'CASHOUT_FAILED_WEB3', message: 'Failed to move funds on-chain.', remediation: '' } });
-      }
-      player.pending_onchain_settlement = false;
-
-      // Step 2: Trigger fiat settlement.
-      // In demo mode we can simulate this step to avoid flaky Stripe test-balance constraints.
-      let settlementMode: 'simulated' | 'stripe' = 'stripe';
-      let fiatPayoutStatus: 'simulated_success' | 'stripe_success' | 'stripe_failed' = 'stripe_success';
-      let stripePayoutId = DEMO_PAYOUT_MODE ? 'simulated_payout_demo' : 'simulated_payout_dev';
-      if (DEMO_PAYOUT_MODE && DEMO_PAYOUT_SIMULATE) {
-        settlementMode = 'simulated';
-        fiatPayoutStatus = 'simulated_success';
-        stripePayoutId = `simulated_demo_${player.player_id.slice(0, 8)}_${Date.now()}`;
-        app.log.info(
-          { playerId: player.player_id, destination: DEMO_PAYOUT_DESTINATION, amount: amountToTransfer },
-          'Demo payout settlement simulated'
-        );
-      } else {
-        try {
-          const amountCents = Math.round(amountToTransfer * 100);
-          if (DEMO_PAYOUT_MODE) {
-            const transfer = await createTransferToConnectedAccount(DEMO_PAYOUT_DESTINATION!, amountCents);
-            stripePayoutId = transfer.id;
-          } else {
-            const payout = await initiateInstantPayout(player.stripe_connect_account_id!, amountCents);
-            stripePayoutId = payout.id;
-          }
-        } catch (err) {
-          fiatPayoutStatus = 'stripe_failed';
-          app.log.error({ err, playerId: player.player_id, demoPayout: DEMO_PAYOUT_MODE }, 'Stripe payout step failed');
-          // If Stripe fails, the platform now holds the user's USDC. In production we'd refund or queue retry.
-        }
-      }
-      player.pending_payout = false;
-
-      // Move to inactive state only after explicit safety checks.
-      const [postUsdc, postSol] = await Promise.all([
-        getTokenBalance(player.public_key, usdcMint),
-        getSolBalance(player.public_key),
-      ]);
-      if (postUsdc <= ZERO_USDC_EPSILON && postSol <= ZERO_SOL_EPSILON) {
-        await savePlayer(markPlayerInactive(player));
-      } else {
-        await savePlayer(markPlayerActive(player));
-      }
+      player.simulated_usdc_balance = simulatedBal - amount;
+      await savePlayer(player);
 
       return reply.send({
-        status: 'success',
-        solana_signature: solanaSignature,
-        stripe_payout_id: stripePayoutId,
-        amount_transferred: amountToTransfer,
-        settlement_mode: settlementMode,
-        fiat_payout_status: fiatPayoutStatus,
-        payout_destination_connect_account_id: DEMO_PAYOUT_MODE ? DEMO_PAYOUT_DESTINATION : player.stripe_connect_account_id,
+        status: 'settled',
+        player_id: player.player_id,
+        public_key: player.public_key,
+        amount_usdc: amount,
+        remaining_balance: player.simulated_usdc_balance,
+        confirmation_id: `cashout_${player.player_id.slice(0, 8)}_${Date.now()}`,
+        settlement_mode: 'simulated',
       });
     }
   );
