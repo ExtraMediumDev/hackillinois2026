@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && echo '/* /index.html 200' > dist/_redirects",
+    "build": "tsc && vite build && node scripts/copy-spa-routes.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
