@@ -2,6 +2,15 @@
   margin-top: 3rem;
 }
 
+.marquee-heading {
+  text-align: center;
+  font-family: 'Libre Baskerville', serif;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-weight: 700;
+  color: #e8ebff;
+  margin: 0 0 1.5rem;
+}
+
 .marquee-track {
   position: relative;
   overflow: hidden;
