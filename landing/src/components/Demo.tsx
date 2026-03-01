@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import DecryptedText from './DecryptedText';
-import { FiArrowLeft, FiUser, FiCreditCard, FiDollarSign, FiCopy, FiCheck, FiRefreshCw } from 'react-icons/fi';
+import { FiArrowLeft, FiUser, FiCreditCard, FiDollarSign, FiCopy, FiCheck, FiRefreshCw, FiExternalLink } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
@@ -251,133 +251,148 @@ export default function Demo() {
             )}
 
             {/* Main content */}
-            <div className="demo-grid">
-                {/* Step 1 – Create Wallet */}
-                <div className={`demo-card ${wallet ? 'demo-card--done' : ''}`}>
-                    <div className="demo-card-number">1</div>
-                    <div className="demo-card-content">
-                        <h3 className="demo-card-title">
-                            <FiUser style={{ marginRight: '0.5rem' }} />
-                            Create Wallet
-                        </h3>
-                        <p className="demo-card-desc">
-                            Generate a new burner wallet on Solana devnet. No seed phrases, no extensions.
-                        </p>
+            <div className="demo-split">
+                {/* Left: API Steps */}
+                <div className="demo-steps">
+                    {/* Step 1 – Create Wallet */}
+                    <div className={`demo-card ${wallet ? 'demo-card--done' : ''}`}>
+                        <div className="demo-card-number">1</div>
+                        <div className="demo-card-content">
+                            <h3 className="demo-card-title">
+                                <FiUser style={{ marginRight: '0.5rem' }} />
+                                Create Wallet
+                            </h3>
+                            <p className="demo-card-desc">
+                                Generate a new burner wallet on Solana devnet. No seed phrases, no extensions.
+                            </p>
 
-                        {!wallet ? (
-                            <button className="demo-action-btn" onClick={createWallet} disabled={loading === 'create'}>
-                                {loading === 'create' ? (
-                                    <><FiRefreshCw className="spin" /> Creating...</>
+                            {!wallet ? (
+                                <button className="demo-action-btn" onClick={createWallet} disabled={loading === 'create'}>
+                                    {loading === 'create' ? (
+                                        <><FiRefreshCw className="spin" /> Creating...</>
+                                    ) : (
+                                        'Create My Wallet'
+                                    )}
+                                </button>
+                            ) : (
+                                <div className="demo-player-info">
+                                    <div className="demo-info-row">
+                                        <span className="demo-info-label">Wallet ID</span>
+                                        <span className="demo-info-value">
+                                            <code>{wallet.wallet_id.slice(0, 8)}...{wallet.wallet_id.slice(-4)}</code>
+                                            <button onClick={copyId} className="demo-copy-btn" title="Copy full ID">
+                                                {copied ? <FiCheck /> : <FiCopy />}
+                                            </button>
+                                        </span>
+                                    </div>
+                                    <div className="demo-info-row">
+                                        <span className="demo-info-label">Public Key</span>
+                                        <span className="demo-info-value">
+                                            <code>{wallet.public_key.slice(0, 6)}...{wallet.public_key.slice(-4)}</code>
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Step 2 – Fund Wallet */}
+                    <div className={`demo-card ${!wallet ? 'demo-card--locked' : ''}`}>
+                        <div className="demo-card-number">2</div>
+                        <div className="demo-card-content">
+                            <h3 className="demo-card-title">
+                                <FiCreditCard style={{ marginRight: '0.5rem' }} />
+                                Fund Wallet
+                            </h3>
+                            <p className="demo-card-desc">
+                                Use Stripe test checkout to add funds to your Solana-based demo wallet.
+                            </p>
+
+                            {wallet && (
+                                <div className="demo-balance-row">
+                                    <div className="demo-balance-item">
+                                        <span className="demo-balance-label">USDC</span>
+                                        <span className="demo-balance-value">{wallet.usdc_balance?.toFixed(2) ?? '—'}</span>
+                                    </div>
+                                    <button onClick={refreshBalance} className="demo-refresh-btn" disabled={loading === 'refresh'} title="Refresh balances">
+                                        <FiRefreshCw className={loading === 'refresh' ? 'spin' : ''} />
+                                    </button>
+                                </div>
+                            )}
+
+                            <button
+                                className="demo-action-btn"
+                                onClick={fundWallet}
+                                disabled={!wallet || loading === 'fund'}
+                            >
+                                {loading === 'fund' ? (
+                                    <><FiRefreshCw className="spin" /> Opening Stripe...</>
                                 ) : (
-                                    'Create My Wallet'
+                                    'Fund with $0.50'
                                 )}
                             </button>
-                        ) : (
-                            <div className="demo-player-info">
-                                <div className="demo-info-row">
-                                    <span className="demo-info-label">Wallet ID</span>
-                                    <span className="demo-info-value">
-                                        <code>{wallet.wallet_id.slice(0, 8)}...{wallet.wallet_id.slice(-4)}</code>
-                                        <button onClick={copyId} className="demo-copy-btn" title="Copy full ID">
-                                            {copied ? <FiCheck /> : <FiCopy />}
-                                        </button>
+                        </div>
+                    </div>
+
+                    {/* Step 3 – Withdraw */}
+                    <div className={`demo-card ${!wallet ? 'demo-card--locked' : ''}`}>
+                        <div className="demo-card-number">3</div>
+                        <div className="demo-card-content">
+                            <h3 className="demo-card-title">
+                                <FiDollarSign style={{ marginRight: '0.5rem' }} />
+                                Withdraw
+                            </h3>
+                            <p className="demo-card-desc">
+                                Withdraw your USDC balance. In production this settles to your bank account via Stripe Connect.
+                            </p>
+
+                            {withdrawResult?.status === 'settled' && (
+                                <div className="demo-success">
+                                    <span>
+                                        Withdrew {withdrawResult.amount_usdc} USDC.
+                                        Remaining balance: {withdrawResult.remaining_balance?.toFixed(2) ?? '0.00'}.
                                     </span>
                                 </div>
-                                <div className="demo-info-row">
-                                    <span className="demo-info-label">Public Key</span>
-                                    <span className="demo-info-value">
-                                        <code>{wallet.public_key.slice(0, 6)}...{wallet.public_key.slice(-4)}</code>
-                                    </span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Step 2 – Fund Wallet */}
-                <div className={`demo-card ${!wallet ? 'demo-card--locked' : ''}`}>
-                    <div className="demo-card-number">2</div>
-                    <div className="demo-card-content">
-                        <h3 className="demo-card-title">
-                            <FiCreditCard style={{ marginRight: '0.5rem' }} />
-                            Fund Wallet
-                        </h3>
-                        <p className="demo-card-desc">
-                            Use Stripe test checkout to add funds to your Solana-based demo wallet.
-                        </p>
-
-                        {wallet && (
-                            <div className="demo-balance-row">
-                                <div className="demo-balance-item">
-                                    <span className="demo-balance-label">USDC</span>
-                                    <span className="demo-balance-value">{wallet.usdc_balance?.toFixed(2) ?? '—'}</span>
-                                </div>
-                                <button onClick={refreshBalance} className="demo-refresh-btn" disabled={loading === 'refresh'} title="Refresh balances">
-                                    <FiRefreshCw className={loading === 'refresh' ? 'spin' : ''} />
-                                </button>
-                            </div>
-                        )}
-
-                        <button
-                            className="demo-action-btn"
-                            onClick={fundWallet}
-                            disabled={!wallet || loading === 'fund'}
-                        >
-                            {loading === 'fund' ? (
-                                <><FiRefreshCw className="spin" /> Opening Stripe...</>
-                            ) : (
-                                'Fund with $0.50'
                             )}
-                        </button>
+
+                            <button
+                                className="demo-action-btn demo-action-btn--cashout"
+                                onClick={withdraw}
+                                disabled={!wallet || loading === 'cashout'}
+                            >
+                                {loading === 'cashout' ? (
+                                    <><FiRefreshCw className="spin" /> Processing...</>
+                                ) : (
+                                    'Withdraw'
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                {/* Step 3 – Withdraw */}
-                <div className={`demo-card ${!wallet ? 'demo-card--locked' : ''}`}>
-                    <div className="demo-card-number">3</div>
-                    <div className="demo-card-content">
-                        <h3 className="demo-card-title">
-                            <FiDollarSign style={{ marginRight: '0.5rem' }} />
-                            Withdraw
-                        </h3>
-                        <p className="demo-card-desc">
-                            Withdraw your USDC balance. In production this settles to your bank account via Stripe Connect.
+                {/* Divider */}
+                <div className="demo-divider">
+                    <div className="demo-divider-line" />
+                    <span className="demo-divider-text">or</span>
+                    <div className="demo-divider-line" />
+                </div>
+
+                {/* Right: Penguin Knockout CTA */}
+                <div className="demo-game-cta">
+                    <div className="demo-game-cta-inner">
+                        <h3 className="demo-game-cta-title">See Splice in Action</h3>
+                        <p className="demo-game-cta-desc">
+                            Experience the full payment flow inside a live multiplayer game built on our API.
                         </p>
-
-                        {withdrawResult?.status === 'settled' && (
-                            <div className="demo-success">
-                                <span>
-                                    Withdrew {withdrawResult.amount_usdc} USDC.
-                                    Remaining balance: {withdrawResult.remaining_balance?.toFixed(2) ?? '0.00'}.
-                                </span>
-                            </div>
-                        )}
-
-                        <button
-                            className="demo-action-btn demo-action-btn--cashout"
-                            onClick={withdraw}
-                            disabled={!wallet || loading === 'cashout'}
+                        <a
+                            href="https://penguin-knockout.vercel.app"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="demo-action-btn demo-action-btn--game"
                         >
-                            {loading === 'cashout' ? (
-                                <><FiRefreshCw className="spin" /> Processing...</>
-                            ) : (
-                                'Withdraw'
-                            )}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Step 4 – Game (Coming Soon) */}
-                <div className="demo-card demo-card--locked demo-card--game">
-                    <div className="demo-card-number">4</div>
-                    <div className="demo-card-content">
-                        <h3 className="demo-card-title">
-                            Play Game
-                        </h3>
-                        <p className="demo-card-desc">
-                            Join a live multiplayer game using your funded wallet. Compete against other players and win USDC prizes.
-                        </p>
-                        <div className="demo-coming-soon">Coming Soon</div>
+                            Demo Through Penguin Knockout
+                            <FiExternalLink style={{ marginLeft: '0.5rem' }} />
+                        </a>
                     </div>
                 </div>
             </div>

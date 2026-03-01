@@ -502,7 +502,7 @@ h1 {
 
 /* ─── Demo Page ─── */
 .demo-page {
-  max-width: 900px;
+  max-width: 1100px;
   margin: 0 auto;
 }
 
@@ -570,15 +570,110 @@ h1 {
   padding: 0.1rem 0.35rem;
 }
 
-.demo-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+.demo-split {
+  display: flex;
+  align-items: stretch;
+  gap: 2rem;
 }
 
-@media (max-width: 680px) {
-  .demo-grid {
-    grid-template-columns: 1fr;
+.demo-steps {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.demo-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  flex-shrink: 0;
+}
+
+.demo-divider-line {
+  flex: 1;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(174, 182, 255, 0.25), transparent);
+}
+
+.demo-divider-text {
+  color: #8b91c7;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.demo-game-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 280px;
+}
+
+.demo-game-cta-inner {
+  text-align: center;
+  padding: 2rem 1.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(174, 182, 255, 0.12);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.demo-game-cta-inner:hover {
+  border-color: rgba(174, 182, 255, 0.25);
+  box-shadow: 0 8px 32px rgba(106, 92, 255, 0.1);
+}
+
+.demo-game-cta-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #eef0ff;
+  margin: 0 0 0.6rem;
+}
+
+.demo-game-cta-desc {
+  color: #a8aedd;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0 0 1.25rem;
+}
+
+.demo-action-btn--game {
+  background: linear-gradient(135deg, rgba(106, 92, 255, 0.35), rgba(77, 233, 168, 0.25));
+  border-color: rgba(77, 233, 168, 0.3);
+  text-decoration: none;
+}
+
+.demo-action-btn--game:hover {
+  background: linear-gradient(135deg, rgba(106, 92, 255, 0.55), rgba(77, 233, 168, 0.45));
+  box-shadow: 0 4px 20px rgba(77, 233, 168, 0.3);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 800px) {
+  .demo-split {
+    flex-direction: column;
+  }
+
+  .demo-divider {
+    flex-direction: row;
+    padding: 0 1rem;
+  }
+
+  .demo-divider-line {
+    width: auto;
+    height: 1px;
+    flex: 1;
+    background: linear-gradient(90deg, transparent, rgba(174, 182, 255, 0.25), transparent);
+  }
+
+  .demo-game-cta {
+    flex: none;
   }
 }
 
@@ -806,11 +901,6 @@ h1 {
   animation: spin 0.8s linear infinite;
 }
 
-/* Game card styling */
-.demo-card--game {
-  opacity: 0.6;
-  border-style: dashed;
-}
 
 .stripe-return-page {
   min-height: calc(100vh - 8rem);
