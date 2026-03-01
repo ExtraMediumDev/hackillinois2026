@@ -6,6 +6,7 @@ import DecryptedText from './DecryptedText';
 import AnimatedList from './AnimatedList';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
+const API_KEY = import.meta.env.VITE_API_KEY ?? '';
 
 type HttpMethod = 'GET' | 'POST';
 
@@ -217,6 +218,24 @@ function MethodBadge({ method }: { method: HttpMethod }) {
     );
 }
 
+function ApiKeyBanner({ apiKey }: { apiKey: string }) {
+    const [copied, setCopied] = useState(false);
+    const copy = () => {
+        navigator.clipboard.writeText(apiKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+    return (
+        <div className="docs-api-key-banner">
+            <span className="docs-api-key-label">Dev API Key (hackathon use):</span>
+            <code className="docs-api-key-value">{apiKey}</code>
+            <button className="docs-copy-btn" onClick={copy} title="Copy API key">
+                {copied ? <FiCheck size={14} /> : <FiCopy size={14} />}
+            </button>
+        </div>
+    );
+}
+
 function EndpointDetail({ endpoint }: { endpoint: EndpointDef }) {
     const [copiedCurl, setCopiedCurl] = useState(false);
 
@@ -346,6 +365,7 @@ export default function ApiDocs() {
                 <p className="docs-subtitle">
                     All endpoints require <code>X-API-Key</code> header unless noted. Base URL: <code>{API_BASE}</code>
                 </p>
+                {API_KEY && <ApiKeyBanner apiKey={API_KEY} />}
             </div>
 
             <AnimatedList
