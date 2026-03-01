@@ -161,14 +161,12 @@ export default function Demo() {
         setLoading('fund');
         setError(null);
         try {
-            const successUrl = `${window.location.origin}/demo/stripe-success`;
-            const cancelUrl = `${window.location.origin}/demo/stripe-cancel`;
+            const redirectUrl = `${window.location.origin}/demo`;
             const res = await fetch(`${API_BASE}/v1/wallets/${wallet.wallet_id}/deposit`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: JSON.stringify({
-                    success_url: successUrl,
-                    cancel_url: cancelUrl,
+                    redirect_url: redirectUrl,
                     amount_usd: 0.50,
                 }),
             });
