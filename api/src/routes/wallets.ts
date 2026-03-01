@@ -133,10 +133,10 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
         body: {
           type: 'object',
           properties: {
-            success_url: { type: 'string' },
-            cancel_url: { type: 'string' },
+            redirect_url: { type: 'string' },
             amount_usd: { type: 'number' },
           },
+          required: ['redirect_url'],
         },
         response: {
           200: {
@@ -152,7 +152,7 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: { success_url?: string; cancel_url?: string; amount_usd?: number };
+        Body: { redirect_url: string; amount_usd?: number };
       }>,
       reply: FastifyReply,
     ) => {
@@ -165,8 +165,10 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
         ));
       }
       const player = await normalizeAndPersistIfNeeded(existing);
-      const successUrl = request.body?.success_url ?? 'http://localhost:3000/success';
-      const cancelUrl = request.body?.cancel_url ?? 'http://localhost:3000/cancel';
+      const redirectUrl = request.body.redirect_url;
+      const separator = redirectUrl.includes('?') ? '&' : '?';
+      const successUrl = `${redirectUrl}${separator}status=success`;
+      const cancelUrl = `${redirectUrl}${separator}status=cancelled`;
       const amountUsd = request.body?.amount_usd ?? 0.5;
       const amountCents = Math.round(amountUsd * 100);
 
