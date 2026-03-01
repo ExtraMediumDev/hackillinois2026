@@ -39,9 +39,15 @@ export function getConnection(): Connection {
 
 export function getAuthority(): Keypair {
   if (!_authority) {
-    const keyPath = resolveKeypairPath(process.env.AUTHORITY_KEYPAIR_PATH!);
-    const raw = JSON.parse(fs.readFileSync(keyPath, 'utf-8')) as number[];
-    _authority = Keypair.fromSecretKey(Uint8Array.from(raw));
+    const jsonEnv = process.env.AUTHORITY_KEYPAIR_JSON;
+    if (jsonEnv) {
+      const raw = JSON.parse(jsonEnv) as number[];
+      _authority = Keypair.fromSecretKey(Uint8Array.from(raw));
+    } else {
+      const keyPath = resolveKeypairPath(process.env.AUTHORITY_KEYPAIR_PATH!);
+      const raw = JSON.parse(fs.readFileSync(keyPath, 'utf-8')) as number[];
+      _authority = Keypair.fromSecretKey(Uint8Array.from(raw));
+    }
   }
   return _authority;
 }

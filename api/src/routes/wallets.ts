@@ -136,9 +136,10 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
           type: 'object',
           properties: {
             redirect_url: { type: 'string' },
+            success_url: { type: 'string' },
+            cancel_url: { type: 'string' },
             amount_usd: { type: 'number' },
           },
-          required: ['redirect_url'],
         },
         response: {
           200: {
@@ -154,7 +155,7 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: { redirect_url: string; amount_usd?: number };
+        Body: { redirect_url?: string; success_url?: string; cancel_url?: string; amount_usd?: number };
       }>,
       reply: FastifyReply,
     ) => {
@@ -167,10 +168,24 @@ export default async function walletRoutes(app: FastifyInstance): Promise<void> 
         ));
       }
       const player = await normalizeAndPersistIfNeeded(existing);
-      const redirectUrl = request.body.redirect_url;
-      const separator = redirectUrl.includes('?') ? '&' : '?';
-      const successUrl = `${redirectUrl}${separator}status=success`;
-      const cancelUrl = `${redirectUrl}${separator}status=cancelled`;
+
+      let successUrl: string;
+      let cancelUrl: string;
+      if (request.body.success_url && request.body.cancel_url) {
+        successUrl = request.body.success_url;
+        cancelUrl = request.body.cancel_url;
+      } else if (request.body.redirect_url) {
+        const sep = request.body.redirect_url.includes('?') ? '&' : '?';
+        successUrl = `${request.body.redirect_url}${sep}status=success`;
+        cancelUrl = `${request.body.redirect_url}${sep}status=cancelled`;
+      } else {
+        return reply.code(400).send(spliceError(
+          'MISSING_URL', 400,
+          'Provide success_url + cancel_url, or redirect_url.',
+          'Include redirect URLs so Stripe can redirect the user after checkout.',
+        ));
+      }
+
       const amountUsd = request.body?.amount_usd ?? 0.5;
       const amountCents = Math.round(amountUsd * 100);
 

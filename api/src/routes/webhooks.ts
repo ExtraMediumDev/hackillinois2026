@@ -80,7 +80,10 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
             await savePlayer(markPlayerActive(player));
             app.log.info({ playerId, amountUsd, signature: sig }, 'Credited devnet USDC after checkout');
           } catch (err) {
-            app.log.error({ err, playerId, amountUsd }, 'Failed to credit USDC after checkout');
+            app.log.warn({ err, playerId, amountUsd }, 'On-chain USDC transfer failed, crediting simulated balance');
+            player.simulated_usdc_balance = (player.simulated_usdc_balance ?? 0) + amountUsd;
+            await savePlayer(markPlayerActive(player));
+            app.log.info({ playerId, amountUsd, simulated: player.simulated_usdc_balance }, 'Credited simulated USDC after checkout');
           }
           break;
         }
