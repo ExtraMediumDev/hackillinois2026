@@ -37,3 +37,33 @@ export interface SpliceError {
     remediation: string;
   };
 }
+
+// ─── Game Types ────────────────────────────────────────────────────────────────
+
+export type GameStatus = 'waiting' | 'active' | 'resolved';
+
+export interface GamePlayer {
+  player_id: string;
+  pubkey: string;
+  x: number;
+  y: number;
+  alive: boolean;
+}
+
+export interface GameRecord {
+  game_id: string;
+  pda_address: string;
+  escrow_address: string;
+  buy_in_usdc: string;
+  max_players: number;
+  status: GameStatus;
+  grid_size: number;
+  grid: number[];
+  players: GamePlayer[];
+  prize_pool_usdc: string;
+  collapse_round: number;
+  move_count: number;
+  winner: string | null;
+  stripe_payout_initiated: boolean;
+  created_at: number;
+}

@@ -58,9 +58,9 @@ export function withIdempotency(handler: RouteHandler): RouteHandler {
         status: 'error',
         statusCode: 409,
         error: {
-          code: 'CONCURRENT_REQUEST',
-          message: 'A concurrent request with this Idempotency-Key was detected.',
-          remediation: 'Use a unique Idempotency-Key per logical request.',
+          code: 'REQUEST_IN_FLIGHT',
+          message: 'This request is currently being processed.',
+          remediation: 'Wait a moment and retry.',
         },
       });
     }

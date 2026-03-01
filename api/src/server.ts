@@ -8,6 +8,7 @@ import swaggerUi from '@fastify/swagger-ui';
 
 import { authMiddleware } from './middleware/auth';
 import playerRoutes from './routes/players';
+import gameRoutes from './routes/games';
 import webhookRoutes from './routes/webhooks';
 import { SpliceError } from './types';
 
@@ -83,6 +84,7 @@ const start = async () => {
   });
 
   app.register(playerRoutes, { prefix: '/v1' });
+  app.register(gameRoutes, { prefix: '/v1' });
   app.register(webhookRoutes, { prefix: '/v1' });
 
   const port = parseInt(process.env.PORT ?? '3000', 10);
