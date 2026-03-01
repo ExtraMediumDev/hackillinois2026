@@ -181,6 +181,8 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
               public_key: { type: 'string' },
               sol_balance: { type: 'number' },
               usdc_balance: { type: 'number' },
+              on_chain_usdc: { type: 'number' },
+              simulated_usdc: { type: 'number' },
             },
           },
         },
@@ -210,11 +212,15 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         getTokenBalance(player.public_key, usdcMint),
       ]);
 
+      const simulatedBalance = player.simulated_usdc_balance ?? 0;
+
       return reply.send({
         player_id: player.player_id,
         public_key: player.public_key,
         sol_balance: solBalance,
-        usdc_balance: usdcBalance,
+        usdc_balance: usdcBalance + simulatedBalance,
+        on_chain_usdc: usdcBalance,
+        simulated_usdc: simulatedBalance,
       });
     }
   );

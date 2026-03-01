@@ -43,6 +43,28 @@ Funds the player with USDC via Stripe Checkout. Required if `buy_in_usdc > 0`.
 { "url": "https://checkout.stripe.com/...", "amount_usd": 0.5 }
 ```
 
+### 2b. `GET /v1/players/:id`
+
+Reads the player's wallet and balance.
+
+```json
+// Response 200
+{
+  "player_id": "uuid",
+  "public_key": "base58...",
+  "sol_balance": 0,
+  "usdc_balance": 1.50,
+  "on_chain_usdc": 1.00,
+  "simulated_usdc": 0.50
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `usdc_balance` | Total spendable balance (on-chain + simulated) |
+| `on_chain_usdc` | Actual USDC in the Solana burner wallet |
+| `simulated_usdc` | Platform-credited balance from game payouts |
+
 ### 3. `POST /v1/games`
 
 Creates a game lobby. Use `"0.00"` for free/demo games.
@@ -248,6 +270,25 @@ All errors use this shape:
 | `INVALID_DISTRIBUTION` | 400 | Percentages don't sum to 100 |
 | `MISSING_IDEMPOTENCY_KEY` | 400 | Required header missing on join/move/start/resolve |
 | `REQUEST_IN_FLIGHT` | 409 | Duplicate idempotency key still processing |
+
+---
+
+## Balance Management
+
+Player balances combine on-chain USDC and simulated (platform-credited) USDC:
+
+- **`usdc_balance`** — total spendable balance (on-chain + simulated)
+- **`on_chain_usdc`** — actual on-chain USDC in the burner wallet
+- **`simulated_usdc`** — platform-credited balance (from game payouts)
+
+When a game resolves, the API **credits each payout recipient's simulated balance** automatically. When joining a paid game, the API checks the combined balance against the buy-in and debits simulated balance first.
+
+```
+Fund (Stripe checkout) → on_chain_usdc increases
+Join game (buy-in)     → simulated_usdc debited first, then on-chain
+Resolve (payout)       → simulated_usdc credited to winners
+GET player             → usdc_balance = on_chain_usdc + simulated_usdc
+```
 
 ---
 

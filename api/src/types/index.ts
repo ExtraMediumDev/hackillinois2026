@@ -18,6 +18,7 @@ export interface PlayerRecord {
   pending_payout?: boolean;
   pending_onchain_settlement?: boolean;
   created_at: number;
+  simulated_usdc_balance?: number;
 }
 
 export interface IdempotencyRecord {

@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
-import { saveGame, getGame, getPlayer } from '../services/redis';
+import { saveGame, getGame, getPlayer, savePlayer } from '../services/redis';
 import { withIdempotency } from '../services/idempotency';
 import { getTokenBalance } from '../services/solana';
 import { GameRecord, GamePlayer, GamePlacement, GamePayout, SpliceError } from '../types';
@@ -271,14 +271,23 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         ));
       }
 
-      const balance = await getTokenBalance(player.public_key, USDC_MINT);
+      const onChainBalance = await getTokenBalance(player.public_key, USDC_MINT);
+      const simulatedBalance = player.simulated_usdc_balance ?? 0;
+      const totalBalance = onChainBalance + simulatedBalance;
       const buyIn = parseFloat(game.buy_in_usdc);
-      if (balance < buyIn) {
+      if (totalBalance < buyIn) {
         return reply.code(402).send(spliceError(
           'INSUFFICIENT_FUNDS', 402,
-          `Player has ${balance} USDC but buy-in is ${game.buy_in_usdc}.`,
+          `Player has ${totalBalance.toFixed(2)} USDC but buy-in is ${game.buy_in_usdc}.`,
           'Fund the player via POST /v1/players/:id/checkout-session.',
         ));
+      }
+
+      // Debit simulated balance first, then on-chain covers the rest
+      if (buyIn > 0 && simulatedBalance > 0) {
+        const debit = Math.min(simulatedBalance, buyIn);
+        player.simulated_usdc_balance = simulatedBalance - debit;
+        await savePlayer(player);
       }
 
       const spawn = findSpawnPosition(game.grid, game.players);
@@ -672,6 +681,18 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       game.payouts = payouts;
       game.distribution_rule = distributionRule;
       game.settlement_status = 'completed';
+
+      // Credit each payout recipient's simulated balance
+      for (const payout of payouts) {
+        const creditAmount = parseFloat(payout.amount_usdc);
+        if (creditAmount > 0) {
+          const recipient = await getPlayer(payout.player_id);
+          if (recipient) {
+            recipient.simulated_usdc_balance = (recipient.simulated_usdc_balance ?? 0) + creditAmount;
+            await savePlayer(recipient);
+          }
+        }
+      }
 
       await saveGame(game);
 
