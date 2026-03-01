@@ -8,7 +8,7 @@
 .rail-segment {
   display: flex;
   align-items: center;
-  flex: 1;
+  flex: 1 1 0%;
   min-width: 0;
 }
 
@@ -20,11 +20,13 @@
 
 .rail-node {
   flex-shrink: 0;
+  width: clamp(120px, 14vw, 180px);
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.3rem;
-  padding: clamp(0.9rem, 2vw, 1.4rem) clamp(1.6rem, 3.5vw, 3.2rem);
+  padding: clamp(0.9rem, 2vw, 1.4rem) 0.5rem;
   border-radius: 999px;
   border: 1px solid rgba(142, 228, 255, 0.2);
   background: rgba(106, 92, 255, 0.06);
@@ -67,11 +69,9 @@
   left: 0;
   right: 0;
   height: 1.5px;
-  background: linear-gradient(
-    90deg,
-    rgba(142, 228, 255, 0.25),
-    rgba(168, 85, 247, 0.2)
-  );
+  background: linear-gradient(90deg,
+      rgba(142, 228, 255, 0.25),
+      rgba(168, 85, 247, 0.2));
 }
 
 .rail-line--top {
@@ -110,11 +110,13 @@
 /* ── Animations ── */
 
 @keyframes rail-glow {
+
   0%,
   100% {
     border-color: rgba(142, 228, 255, 0.15);
     box-shadow: 0 0 10px rgba(106, 92, 255, 0.08);
   }
+
   50% {
     border-color: rgba(142, 228, 255, 0.45);
     box-shadow:
@@ -128,12 +130,15 @@
     left: -8px;
     opacity: 0;
   }
+
   8% {
     opacity: 1;
   }
+
   85% {
     opacity: 1;
   }
+
   100% {
     left: calc(100% + 8px);
     opacity: 0;

@@ -264,6 +264,11 @@ h1 {
   margin-bottom: 2.5rem;
 }
 
+.demo-hero .headline {
+  font-size: clamp(2.5rem, 10vw, 7rem);
+  white-space: nowrap;
+}
+
 .demo-subtitle {
   color: #d8dcff;
   font-size: 1.15rem;

@@ -236,7 +236,7 @@ export default function Demo() {
                     />
                 </h1>
                 <p className="demo-subtitle">
-                    Create a player, fund your burner wallet, and cash out — all in one flow on the Solana network.
+                    A single API for fiat-to-fiat movement that abstracts away every protocol and wallet layer.
                 </p>
             </div>
 

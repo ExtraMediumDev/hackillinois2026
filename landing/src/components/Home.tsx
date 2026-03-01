@@ -49,7 +49,7 @@ export default function Home() {
                     />
                 </h1>
                 <p className="subhead">
-                    The payments layer for web3 games. Card in, crypto out, no wallets required.
+                    Where The Card Meets The Chain
                 </p>
 
                 <div className="hero-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
