@@ -61,7 +61,12 @@ app.get(
 
 const start = async () => {
   await app.register(sensible);
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-API-Key', 'Idempotency-Key', 'Authorization'],
+  });
   await app.register(fastifyRawBody, {
     global: false,
     encoding: false,

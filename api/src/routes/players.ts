@@ -389,6 +389,30 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       }
       const player = await normalizeAndPersistIfNeeded(existingPlayer);
 
+      const simulatedBal = player.simulated_usdc_balance ?? 0;
+      const requestedAmount = request.body?.amount_usdc;
+
+      // Simulated cashout: deduct from simulated_usdc_balance (game winnings).
+      // No on-chain transfer or Stripe Connect needed.
+      if (simulatedBal > 0 && (requestedAmount === undefined || requestedAmount <= simulatedBal)) {
+        const amount = requestedAmount !== undefined ? requestedAmount : simulatedBal;
+        if (amount <= 0) {
+          return reply.code(400).send({ status: 'error', statusCode: 400, error: { code: 'INVALID', message: 'Cannot transfer 0.', remediation: '' } });
+        }
+        player.simulated_usdc_balance = simulatedBal - amount;
+        await savePlayer(player);
+
+        return reply.send({
+          status: 'settled',
+          solana_signature: 'simulated_cashout',
+          stripe_payout_id: `simulated_cashout_${player.player_id.slice(0, 8)}_${Date.now()}`,
+          amount_transferred: amount,
+          settlement_mode: 'simulated',
+          fiat_payout_status: 'simulated_success',
+          payout_destination_connect_account_id: 'simulated',
+        });
+      }
+
       if (DEMO_PAYOUT_MODE && !DEMO_PAYOUT_DESTINATION) {
         return reply.code(500).send({
           status: 'error',
@@ -416,7 +440,6 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       const usdcMint = process.env.USDC_MINT!;
       const currentUsdcBalance = await getTokenBalance(player.public_key, usdcMint);
 
-      const requestedAmount = request.body?.amount_usdc;
       const amountToTransfer = requestedAmount !== undefined ? requestedAmount : currentUsdcBalance;
 
       if (amountToTransfer <= 0) {

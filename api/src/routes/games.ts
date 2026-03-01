@@ -616,13 +616,17 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
         ));
       }
 
-      const winnerInGame = game.players.find(p => p.player_id === winner);
-      if (!winnerInGame) {
-        return reply.code(400).send(spliceError(
-          'INVALID_WINNER', 400,
-          `Player ${winner} is not in this game.`,
-          'Provide a player_id that has joined the game.',
-        ));
+      // When using player_results, winner is informational (can be a client-side bot ID).
+      // Only enforce winner-in-game for pool-based distribution mode.
+      if (!player_results || player_results.length === 0) {
+        const winnerInGame = game.players.find(p => p.player_id === winner);
+        if (!winnerInGame) {
+          return reply.code(400).send(spliceError(
+            'INVALID_WINNER', 400,
+            `Player ${winner} is not in this game.`,
+            'Provide a player_id that has joined the game.',
+          ));
+        }
       }
 
       // ── Explicit player_results mode (for bot/client-authoritative games) ──
