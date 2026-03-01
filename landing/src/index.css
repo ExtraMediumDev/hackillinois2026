@@ -122,6 +122,16 @@ h1 {
   place-items: center;
 }
 
+/* Stat section: above flow diagram, tighter spacing */
+.stat-section {
+  margin-top: 5rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-section + .demo-section {
+  margin-top: 2rem;
+}
+
 .carousel-title {
   margin: 0;
   font-family: 'Libre Baskerville', serif;
@@ -136,12 +146,49 @@ h1 {
   justify-content: center;
 }
 
+/* Stat block (replaces carousel, same section space) */
+.stat-wrap {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 280px;
+  padding: 2rem 1.5rem;
+}
+
+.stat-number {
+  margin: 0 0 1rem;
+  font-family: 'Libre Baskerville', serif;
+  font-size: clamp(4rem, 12vw, 7rem);
+  font-weight: 700;
+  color: #e8ebff;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.stat-copy {
+  margin: 0;
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  line-height: 1.5;
+  color: rgba(243, 245, 255, 0.75);
+  max-width: 420px;
+}
+
+.stat-copy strong {
+  color: #aeb6ff;
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .content {
     padding-top: 5.5rem;
   }
 
-  .carousel-wrap .carousel-container {
+  .carousel-wrap .carousel-container,
+  .stat-wrap {
     width: 94vw !important;
     max-width: 560px;
   }

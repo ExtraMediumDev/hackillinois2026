@@ -1,37 +1,8 @@
-import Carousel, { type CarouselItem } from './Carousel';
 import CompanyMarquee from './CompanyMarquee';
 import DecryptedText from './DecryptedText';
 import PaymentFlowDemo from './PaymentFlowDemo';
-import ScrollReveal from './ScrollReveal';
-import { FiCreditCard, FiDollarSign, FiShield, FiZap, FiBookOpen, FiPlay } from 'react-icons/fi';
+import { FiBookOpen, FiPlay } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
-
-const pillars: CarouselItem[] = [
-    {
-        id: 1,
-        title: 'Instant Fiat Onramp',
-        description: 'Accept cards with Stripe and mint USDC liquidity without forcing users to touch wallets.',
-        icon: <FiCreditCard className="carousel-icon" />,
-    },
-    {
-        id: 2,
-        title: 'Wallet Abstraction',
-        description: 'Provision burner wallets and route SOL operations through secure backend orchestration.',
-        icon: <FiShield className="carousel-icon" />,
-    },
-    {
-        id: 3,
-        title: 'Programmable Swaps',
-        description: 'Convert between SOL and USDC to match product flows and user payout requirements in real time.',
-        icon: <FiZap className="carousel-icon" />,
-    },
-    {
-        id: 4,
-        title: 'Payout Rails',
-        description: 'Exit back through Stripe checkout and payouts for a smooth crypto-to-fiat settlement cycle.',
-        icon: <FiDollarSign className="carousel-icon" />,
-    },
-];
 
 export default function Home() {
     return (
@@ -64,16 +35,19 @@ export default function Home() {
                 </div>
             </section>
 
-            <section className="demo-section">
-                <div className="demo-player-wrap">
-                    <PaymentFlowDemo />
+            <section className="carousel-section stat-section">
+                <h2 className="carousel-title">The Barrier to Entry</h2>
+                <div className="stat-wrap">
+                    <p className="stat-number">49%</p>
+                    <p className="stat-copy">
+                        of people cite <strong>lack of understanding of how crypto works</strong> as the biggest barrier to entry.
+                    </p>
                 </div>
             </section>
 
-            <section className="carousel-section">
-                <h2 className="carousel-title">Platform Capabilities</h2>
-                <div className="carousel-wrap">
-                    <Carousel items={pillars} baseWidth={560} autoplay autoplayDelay={2600} pauseOnHover loop />
+            <section className="demo-section">
+                <div className="demo-player-wrap">
+                    <PaymentFlowDemo />
                 </div>
             </section>
 
