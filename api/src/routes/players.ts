@@ -11,6 +11,7 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
   const ZERO_SOL_EPSILON = 0.00001;
   const DEMO_PAYOUT_DESTINATION = process.env.DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID;
   const DEMO_PAYOUT_MODE = process.env.DEMO_PAYOUT_MODE === 'true' || Boolean(DEMO_PAYOUT_DESTINATION);
+  const DEMO_PAYOUT_SIMULATE = process.env.DEMO_PAYOUT_SIMULATE !== 'false';
 
   const normalizeAndPersistIfNeeded = async (player: ReturnType<typeof ensurePlayerLifecycleFields>): Promise<typeof player> => {
     const normalized = ensurePlayerLifecycleFields(player);
@@ -364,6 +365,9 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
               solana_signature: { type: 'string' },
               stripe_payout_id: { type: 'string' },
               amount_transferred: { type: 'number' },
+              settlement_mode: { type: 'string' },
+              fiat_payout_status: { type: 'string' },
+              payout_destination_connect_account_id: { type: 'string' },
             },
           },
         },
@@ -450,21 +454,34 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
       }
       player.pending_onchain_settlement = false;
 
-      // Step 2: Trigger Stripe Instant Payout from Platform -> User Connected Bank
-      // In demo mode, transfer to one preconfigured connected account for frictionless judging.
+      // Step 2: Trigger fiat settlement.
+      // In demo mode we can simulate this step to avoid flaky Stripe test-balance constraints.
+      let settlementMode: 'simulated' | 'stripe' = 'stripe';
+      let fiatPayoutStatus: 'simulated_success' | 'stripe_success' | 'stripe_failed' = 'stripe_success';
       let stripePayoutId = DEMO_PAYOUT_MODE ? 'simulated_payout_demo' : 'simulated_payout_dev';
-      try {
-        const amountCents = Math.round(amountToTransfer * 100);
-        if (DEMO_PAYOUT_MODE) {
-          const transfer = await createTransferToConnectedAccount(DEMO_PAYOUT_DESTINATION!, amountCents);
-          stripePayoutId = transfer.id;
-        } else {
-          const payout = await initiateInstantPayout(player.stripe_connect_account_id!, amountCents);
-          stripePayoutId = payout.id;
+      if (DEMO_PAYOUT_MODE && DEMO_PAYOUT_SIMULATE) {
+        settlementMode = 'simulated';
+        fiatPayoutStatus = 'simulated_success';
+        stripePayoutId = `simulated_demo_${player.player_id.slice(0, 8)}_${Date.now()}`;
+        app.log.info(
+          { playerId: player.player_id, destination: DEMO_PAYOUT_DESTINATION, amount: amountToTransfer },
+          'Demo payout settlement simulated'
+        );
+      } else {
+        try {
+          const amountCents = Math.round(amountToTransfer * 100);
+          if (DEMO_PAYOUT_MODE) {
+            const transfer = await createTransferToConnectedAccount(DEMO_PAYOUT_DESTINATION!, amountCents);
+            stripePayoutId = transfer.id;
+          } else {
+            const payout = await initiateInstantPayout(player.stripe_connect_account_id!, amountCents);
+            stripePayoutId = payout.id;
+          }
+        } catch (err) {
+          fiatPayoutStatus = 'stripe_failed';
+          app.log.error({ err, playerId: player.player_id, demoPayout: DEMO_PAYOUT_MODE }, 'Stripe payout step failed');
+          // If Stripe fails, the platform now holds the user's USDC. In production we'd refund or queue retry.
         }
-      } catch (err) {
-        app.log.error({ err, playerId: player.player_id, demoPayout: DEMO_PAYOUT_MODE }, 'Stripe payout step failed');
-        // If Stripe fails, the platform now holds the user's USDC. In production we'd refund or queue retry.
       }
       player.pending_payout = false;
 
@@ -483,7 +500,10 @@ export default async function playerRoutes(app: FastifyInstance): Promise<void> 
         status: 'success',
         solana_signature: solanaSignature,
         stripe_payout_id: stripePayoutId,
-        amount_transferred: amountToTransfer
+        amount_transferred: amountToTransfer,
+        settlement_mode: settlementMode,
+        fiat_payout_status: fiatPayoutStatus,
+        payout_destination_connect_account_id: DEMO_PAYOUT_MODE ? DEMO_PAYOUT_DESTINATION : player.stripe_connect_account_id,
       });
     }
   );

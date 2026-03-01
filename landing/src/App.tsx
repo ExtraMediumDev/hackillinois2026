@@ -4,6 +4,7 @@ import { Routes, Route } from 'react-router-dom';
 import Home from './components/Home';
 import ApiDocs from './components/ApiDocs';
 import Demo from './components/Demo';
+import StripeReturn from './components/StripeReturn';
 
 export default function App() {
   return (
@@ -21,6 +22,8 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/docs" element={<ApiDocs />} />
           <Route path="/demo" element={<Demo />} />
+          <Route path="/demo/stripe-success" element={<StripeReturn />} />
+          <Route path="/demo/stripe-cancel" element={<StripeReturn />} />
         </Routes>
       </main>
     </div>

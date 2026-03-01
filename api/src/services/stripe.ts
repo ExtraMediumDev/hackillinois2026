@@ -125,8 +125,9 @@ export async function createCheckoutSession(params: {
           currency: 'usd',
           unit_amount: params.amountCents,
           product_data: {
-            name: 'Splice API — Add USDC to wallet',
-            description: 'Fund your burner wallet with USDC for The Floor is Lava',
+            name: 'Splice API - Add crypto using your debit card instantly',
+            description:
+              'Test only: use card 4242 4242 4242 4242, any future MM/YY, any 3-digit CVC, any fake name, and any test email to complete payment.',
             images: undefined,
           },
         },
@@ -137,6 +138,12 @@ export async function createCheckoutSession(params: {
     cancel_url: params.cancelUrl,
     metadata: { player_id: params.playerId },
     client_reference_id: params.playerId,
+    custom_text: {
+      submit: {
+        message:
+          'Test mode only: use card 4242 4242 4242 4242, any future expiry, any 3-digit CVC, and fake customer details.',
+      },
+    },
   });
   return session.url!;
 }

@@ -118,6 +118,9 @@ cd api && npm run dev
 | `PROGRAM_ID` | Deployed Anchor program ID |
 | `STRIPE_SECRET_KEY` | Stripe secret key (`sk_test_...`) |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (`whsec_...`) |
+| `DEMO_PAYOUT_MODE` | Enable demo payout routing logic (true/false) |
+| `DEMO_PAYOUT_DESTINATION_CONNECT_ACCOUNT_ID` | Preconfigured Stripe connected account destination (`acct_...`) |
+| `DEMO_PAYOUT_SIMULATE` | In demo mode, simulate fiat payout success instead of requiring Stripe available balance (`true` recommended for demos) |
 | `USDC_MINT` | USDC devnet mint: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
 
 ---

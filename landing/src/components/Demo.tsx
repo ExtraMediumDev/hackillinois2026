@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import DecryptedText from './DecryptedText';
 import { FiArrowLeft, FiUser, FiCreditCard, FiDollarSign, FiCopy, FiCheck, FiRefreshCw } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
@@ -13,11 +13,24 @@ interface PlayerData {
     usdc_balance?: number;
 }
 
+interface CashoutResult {
+    status?: string;
+    stripe_payout_id?: string;
+    amount_transferred?: number;
+    settlement_mode?: string;
+    fiat_payout_status?: string;
+    payout_destination_connect_account_id?: string;
+}
+
+const PLAYER_STORAGE_KEY = 'splice_demo_player_id';
+
 export default function Demo() {
     const [player, setPlayer] = useState<PlayerData | null>(null);
     const [loading, setLoading] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+    const [cashoutResult, setCashoutResult] = useState<CashoutResult | null>(null);
+    const depositWatchTimerRef = useRef<number | null>(null);
 
     const authHeaders: Record<string, string> = {
         'X-API-Key': API_KEY,
@@ -34,10 +47,76 @@ export default function Demo() {
         return false;
     }, []);
 
+    const fetchPlayerById = useCallback(async (playerId: string): Promise<PlayerData | null> => {
+        const res = await fetch(`${API_BASE}/v1/players/${playerId}`, { headers: authHeaders });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return {
+            player_id: data.player_id,
+            public_key: data.public_key,
+            sol_balance: data.sol_balance,
+            usdc_balance: data.usdc_balance,
+        };
+    }, []);
+
+    const stopDepositWatch = useCallback(() => {
+        if (depositWatchTimerRef.current) {
+            window.clearInterval(depositWatchTimerRef.current);
+            depositWatchTimerRef.current = null;
+        }
+    }, []);
+
+    const startDepositWatch = useCallback((playerId: string, baselineUsdc: number) => {
+        stopDepositWatch();
+        const deadline = Date.now() + 2 * 60 * 1000;
+        let inFlight = false;
+        depositWatchTimerRef.current = window.setInterval(async () => {
+            if (inFlight) return;
+            inFlight = true;
+            try {
+                const latest = await fetchPlayerById(playerId);
+                if (!latest) return;
+                setPlayer(prev => prev?.player_id === playerId ? { ...prev, ...latest } : prev);
+                const currentUsdc = latest.usdc_balance ?? 0;
+                if (currentUsdc > baselineUsdc + 0.000001 || Date.now() > deadline) {
+                    stopDepositWatch();
+                }
+            } finally {
+                inFlight = false;
+            }
+        }, 3000);
+    }, [fetchPlayerById, stopDepositWatch]);
+
+    useEffect(() => {
+        if (!API_KEY) return;
+        const savedPlayerId = window.localStorage.getItem(PLAYER_STORAGE_KEY);
+        if (!savedPlayerId) return;
+
+        void (async () => {
+            try {
+                const restored = await fetchPlayerById(savedPlayerId);
+                if (!restored) {
+                    window.localStorage.removeItem(PLAYER_STORAGE_KEY);
+                    return;
+                }
+                setPlayer(restored);
+            } catch {
+                // Ignore silent restore failures; user can always create a new player.
+            }
+        })();
+    }, [fetchPlayerById]);
+
+    useEffect(() => {
+        return () => {
+            stopDepositWatch();
+        };
+    }, [stopDepositWatch]);
+
     const createPlayer = useCallback(async () => {
         if (!ensureApiKey()) return;
         setLoading('create');
         setError(null);
+        setCashoutResult(null);
         try {
             const res = await fetch(`${API_BASE}/v1/players`, {
                 method: 'POST',
@@ -47,6 +126,7 @@ export default function Demo() {
             if (!res.ok) throw new Error(`Failed to create player (${res.status})`);
             const data = await res.json();
             setPlayer({ player_id: data.player_id, public_key: data.public_key });
+            window.localStorage.setItem(PLAYER_STORAGE_KEY, data.player_id);
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Failed to create player');
         } finally {
@@ -60,79 +140,53 @@ export default function Demo() {
         setLoading('refresh');
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/v1/players/${player.player_id}`, { headers: authHeaders });
-            if (!res.ok) throw new Error(`Failed to fetch balance (${res.status})`);
-            const data = await res.json();
-            setPlayer(prev => prev ? { ...prev, sol_balance: data.sol_balance, usdc_balance: data.usdc_balance } : null);
+            const latest = await fetchPlayerById(player.player_id);
+            if (!latest) throw new Error('Failed to fetch updated balance');
+            setPlayer(prev => prev ? { ...prev, ...latest } : null);
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Failed to refresh balance');
         } finally {
             setLoading(null);
         }
-    }, [player, ensureApiKey]);
+    }, [player, ensureApiKey, fetchPlayerById]);
 
     const fundWallet = useCallback(async () => {
         if (!ensureApiKey()) return;
         if (!player) return;
+        stopDepositWatch();
         setLoading('fund');
         setError(null);
         try {
+            const successUrl = `${window.location.origin}/demo/stripe-success`;
+            const cancelUrl = `${window.location.origin}/demo/stripe-cancel`;
             const res = await fetch(`${API_BASE}/v1/players/${player.player_id}/checkout-session`, {
                 method: 'POST',
                 headers: jsonHeaders,
                 body: JSON.stringify({
-                    success_url: window.location.href + '?funded=true',
-                    cancel_url: window.location.href,
+                    success_url: successUrl,
+                    cancel_url: cancelUrl,
                     amount_usd: 0.50,
                 }),
             });
             if (!res.ok) throw new Error(`Failed to create checkout session (${res.status})`);
             const data = await res.json();
-            if (data.url) window.open(data.url, '_blank');
+            if (data.url) {
+                window.open(data.url, '_blank');
+                startDepositWatch(player.player_id, player.usdc_balance ?? 0);
+            }
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Failed to start funding');
         } finally {
             setLoading(null);
         }
-    }, [player, ensureApiKey]);
-
-    const simulateDeposit = useCallback(async () => {
-        if (!player) return;
-        setLoading('simulate');
-        setError(null);
-        try {
-            const res = await fetch(`${API_BASE}/v1/webhooks/stripe`, {
-                method: 'POST',
-                headers: {
-                    'stripe-signature': 'test-signature',
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    type: 'checkout.session.completed',
-                    data: {
-                        object: {
-                            metadata: { player_id: player.player_id },
-                            client_reference_id: player.player_id,
-                            amount_total: 50,
-                            payment_status: 'paid',
-                        },
-                    },
-                }),
-            });
-            if (!res.ok) throw new Error(`Simulation failed (${res.status})`);
-            await refreshBalance();
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : 'Failed to simulate deposit');
-        } finally {
-            setLoading(null);
-        }
-    }, [player, refreshBalance]);
+    }, [player, ensureApiKey, startDepositWatch, stopDepositWatch]);
 
     const cashOut = useCallback(async () => {
         if (!ensureApiKey()) return;
         if (!player) return;
         setLoading('cashout');
         setError(null);
+        setCashoutResult(null);
         try {
             const res = await fetch(`${API_BASE}/v1/players/${player.player_id}/cashout`, {
                 method: 'POST',
@@ -143,6 +197,8 @@ export default function Demo() {
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error?.message || `Cash out failed (${res.status})`);
             }
+            const body = await res.json().catch(() => ({}));
+            setCashoutResult(body);
             await refreshBalance();
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Cash out failed');
@@ -180,7 +236,7 @@ export default function Demo() {
                     />
                 </h1>
                 <p className="demo-subtitle">
-                    Create a player, fund your burner wallet, and cash out — all in one flow.
+                    Create a player, fund your burner wallet, and cash out — all in one flow on the Solana network.
                 </p>
             </div>
 
@@ -245,7 +301,7 @@ export default function Demo() {
                             Fund Wallet
                         </h3>
                         <p className="demo-card-desc">
-                            Use real test checkout, or click simulation for instant in-UI credit during judging.
+                            Use Stripe test checkout to add funds to your Solana-based demo wallet.
                         </p>
 
                         {player && (
@@ -253,10 +309,6 @@ export default function Demo() {
                                 <div className="demo-balance-item">
                                     <span className="demo-balance-label">USDC</span>
                                     <span className="demo-balance-value">{player.usdc_balance?.toFixed(2) ?? '—'}</span>
-                                </div>
-                                <div className="demo-balance-item">
-                                    <span className="demo-balance-label">SOL</span>
-                                    <span className="demo-balance-value">{player.sol_balance?.toFixed(4) ?? '—'}</span>
                                 </div>
                                 <button onClick={refreshBalance} className="demo-refresh-btn" disabled={loading === 'refresh'} title="Refresh balances">
                                     <FiRefreshCw className={loading === 'refresh' ? 'spin' : ''} />
@@ -275,18 +327,6 @@ export default function Demo() {
                                 'Fund with $0.50'
                             )}
                         </button>
-                        <button
-                            className="demo-action-btn"
-                            style={{ marginTop: '0.6rem', background: 'rgba(106, 92, 255, 0.18)' }}
-                            onClick={simulateDeposit}
-                            disabled={!player || loading === 'simulate'}
-                        >
-                            {loading === 'simulate' ? (
-                                <><FiRefreshCw className="spin" /> Simulating...</>
-                            ) : (
-                                'Simulate $0.50 Deposit'
-                            )}
-                        </button>
                     </div>
                 </div>
 
@@ -301,6 +341,16 @@ export default function Demo() {
                         <p className="demo-card-desc">
                             Convert your USDC balance back to real USD and receive it directly to your bank account via Stripe.
                         </p>
+
+                        {cashoutResult?.status === 'success' && (
+                            <div className="demo-success">
+                                <span>
+                                    You successfully withdrew to test account
+                                    {' '}
+                                    <code>{cashoutResult.payout_destination_connect_account_id ?? 'N/A'}</code>.
+                                </span>
+                            </div>
+                        )}
 
                         <button
                             className="demo-action-btn demo-action-btn--cashout"
@@ -321,7 +371,7 @@ export default function Demo() {
                     <div className="demo-card-number">4</div>
                     <div className="demo-card-content">
                         <h3 className="demo-card-title">
-                            🎮 Play Game
+                            Play Game
                         </h3>
                         <p className="demo-card-desc">
                             Join a live multiplayer game using your funded wallet. Compete against other players and win USDC prizes.

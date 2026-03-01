@@ -284,6 +284,23 @@ h1 {
   line-height: 1;
 }
 
+.demo-success {
+  background: rgba(77, 233, 168, 0.12);
+  border: 1px solid rgba(77, 233, 168, 0.35);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.9rem;
+  color: #b8f6dd;
+  font-size: 0.9rem;
+}
+
+.demo-success code {
+  background: rgba(77, 233, 168, 0.14);
+  color: #d5ffef;
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+
 .demo-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -524,4 +541,58 @@ h1 {
 .demo-card--game {
   opacity: 0.6;
   border-style: dashed;
+}
+
+.stripe-return-page {
+  min-height: calc(100vh - 8rem);
+  display: grid;
+  place-items: center;
+}
+
+.stripe-return-card {
+  width: min(540px, 92%);
+  background:
+    linear-gradient(160deg, rgba(106, 92, 255, 0.16), rgba(77, 233, 168, 0.08)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(174, 182, 255, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 16px 45px rgba(12, 8, 38, 0.45), 0 0 24px rgba(106, 92, 255, 0.18);
+  backdrop-filter: blur(12px);
+  padding: 2rem 1.5rem 1.6rem;
+  text-align: center;
+}
+
+.stripe-return-card h1 {
+  margin: 0 0 0.65rem;
+  font-family: 'Libre Baskerville', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #eef0ff;
+}
+
+.stripe-return-card p {
+  margin: 0 auto;
+  max-width: 460px;
+  color: #cfd5ff;
+  line-height: 1.55;
+}
+
+.stripe-return-actions {
+  margin-top: 1.2rem;
+  display: grid;
+  place-items: center;
+}
+
+.stripe-close-btn {
+  min-width: 190px;
+  font-weight: 700;
+  border-radius: 10px;
+}
+
+.stripe-close-btn:hover {
+  transform: translateY(-1px);
+}
+
+.stripe-close-btn:active {
+  transform: translateY(0);
 }
