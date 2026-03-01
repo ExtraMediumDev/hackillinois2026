@@ -9,7 +9,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import { authMiddleware } from './middleware/auth';
 import playerRoutes from './routes/players';
 import webhookRoutes from './routes/webhooks';
-import { IgniteError } from './types';
+import { SpliceError } from './types';
 
 const app = Fastify({ logger: true });
 
@@ -18,13 +18,13 @@ app.addHook('preHandler', authMiddleware);
 
 // Global error handler
 app.setErrorHandler((error: FastifyError, _request: FastifyRequest, reply: FastifyReply) => {
-  const igniteError = (error as unknown as { igniteError?: IgniteError }).igniteError;
-  if (igniteError) {
-    return reply.code(igniteError.statusCode).send(igniteError);
+  const spliceError = (error as unknown as { spliceError?: SpliceError }).spliceError;
+  if (spliceError) {
+    return reply.code(spliceError.statusCode).send(spliceError);
   }
 
   const statusCode = error.statusCode ?? 500;
-  const response: IgniteError = {
+  const response: SpliceError = {
     status: 'error',
     statusCode,
     error: {
@@ -52,7 +52,7 @@ const start = async () => {
     openapi: {
       openapi: '3.0.0',
       info: {
-        title: 'Ignite API',
+        title: 'Splice API',
         description: 'Web2-to-Web3 gaming bridge API — HackIllinois 2026',
         version: '1.0.0',
       },

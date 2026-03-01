@@ -20,7 +20,7 @@ export interface IdempotencyRecord {
 
 
 
-export interface IgniteError {
+export interface SpliceError {
   status: 'error';
   statusCode: number;
   error: {
