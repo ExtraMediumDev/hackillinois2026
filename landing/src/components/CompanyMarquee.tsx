@@ -100,6 +100,7 @@ export default function CompanyMarquee() {
 
   return (
     <section className="marquee-section">
+      <h2 className="marquee-heading">They Believe In Us, So Can You</h2>
       <div className="marquee-track">
         <div className="marquee-inner">
           {doubled.map((c, i) => (
